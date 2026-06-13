@@ -61,23 +61,16 @@ function extractFilePaths(args: Record<string, unknown>): string[] {
 }
 
 /**
- * Resolve the path to the bundled MCP server entry point. We pass the
- * absolute path to OpenCode via `ctx.directory` (the plugin's install dir)
- * so the user doesn't have to wire up `cwd` themselves.
+ * Return the command to launch the MemWeave MCP server.
  *
- * The plugin lives at `<repo>/src/plugin/index.ts`. The MCP entry is the
- * sibling `src/mcp/index.ts`. The plugin is launched as a TypeScript file
- * by `tsx` (declared in devDependencies), so we invoke it via `tsx`.
+ * Now that the project is published as npm packages, we simply invoke
+ * `npx --yes @mem-weave/mcp` — no need to resolve a local source path.
  *
- * Exported for testability — the smoke test in tests/plugin/ asserts the
- * path resolution is stable.
+ * The `pluginDir` parameter is kept for backward compatibility (the
+ * function is exported and referenced in tests).
  */
-export function resolveMcpServerCommand(pluginDir: string): string[] {
-  // ctx.directory is the directory containing the plugin file itself
-  // (i.e. <repo>/src/plugin/). Walk up to <repo>/ then into src/mcp.
-  const path = require('node:path') as typeof import('node:path');
-  const mcpEntry = path.resolve(pluginDir, '..', 'mcp', 'index.ts');
-  return ['npx', '--yes', 'tsx', mcpEntry];
+export function resolveMcpServerCommand(_pluginDir: string): string[] {
+  return ['npx', '--yes', '@mem-weave/mcp'];
 }
 
 export const MemweaveInjectPlugin: Plugin = async (ctx) => {
