@@ -156,7 +156,7 @@ npm run cli -- <command>
 
 ## REST API 概览
 
-所有接口前缀 `/api/v1/`，完整 OpenAPI 风格的路由见 `src/rest/routes/`。
+所有接口前缀 `/api/v1/`，完整 OpenAPI 风格的路由见 `packages/server/src/rest/routes/`。
 
 | 端点 | 方法 | 用途 |
 |---|---|---|
@@ -275,7 +275,7 @@ MemWeave 的检索结果包含**完整的记忆正文**（`content` 字段），
 
 ### 注入的 XML 长这样
 
-服务端（`src/injection/formatter.ts` 和 `src/plugin/injector.ts`）渲染的 `<memory>` 块**只**包含 `<title>` + `<summary>`，永远不包含 `<content>`：
+服务端（`packages/server/src/injection/formatter.ts`）渲染的 `<memory>` 块**只**包含 `<title>` + `<summary>`，永远不包含 `<content>`：
 
 ```xml
 <memory-context phase="session_start" count="12">
@@ -306,7 +306,7 @@ compact 模式下，注入的排序规则：**tier**（`long` > `medium` > `shor
 
 ### 闭环机制
 
-LLM 调 `memory_expand` 真的能拿到全文吗？**在 OpenCode 里能** —— OpenCode 插件（`src/plugin/index.ts`）用 **`config` 钩子**把 MemWeave 自带的 MCP server（`src/mcp/index.ts`，10 个工具）注册进 OpenCode，OpenCode 启动时自动连接，LLM 立刻就能看到 `memory_save` / `memory_recall` / `memory_smart_search` / `memory_expand` / `memory_graph_query` / `memory_file_history` 等工具。
+LLM 调 `memory_expand` 真的能拿到全文吗？**在 OpenCode 里能** —— OpenCode 插件（`packages/opencode-plugin/src/index.ts`）用 **`config` 钩子**把 MemWeave 自带的 MCP server（`packages/mcp/src/index.ts`，10 个工具）注册进 OpenCode，OpenCode 启动时自动连接，LLM 立刻就能看到 `memory_save` / `memory_recall` / `memory_smart_search` / `memory_expand` / `memory_graph_query` / `memory_file_history` 等工具。
 
 具体步骤：
 
@@ -346,12 +346,12 @@ OpenCode 之外（Claude Desktop / Cursor 等）调 `memweave-mcp` bin 也走完
 
 ### 写侧配套：输入限额 + 限流 + 后台合并 + 日志
 
-- **`CreateMemoryInputSchema` 硬性限额**（`src/core/types.ts`）：`content` ≤ 100,000 字符、`concepts` ≤ 50、`files` ≤ 50。**Buggy / 恶意 LLM 也无法塞 10MB 正文或 10k 概念进 DB**。
-- **写入限流**（`src/server/rate-limiter.ts`）：每 API key 一个 token bucket，30 写入/分钟 突发，2/秒 稳态。`POST /api/v1/memories` 超过配额返 `429 Too Many Requests` + `Retry-After` header。
-- **后台合并阶段**（`src/workers/consolidator.ts`）：除了 evict + promote，加了 **Jaccard 合并阶段**—— 复用和实时去重**同一套** Jaccard 公式和阈值，扫所有同租户同类型记忆对，合并 near-duplicate。**实时去重** + **后台合并**形成两级防线。
+- **`CreateMemoryInputSchema` 硬性限额**（`packages/server/src/core/types.ts`）：`content` ≤ 100,000 字符、`concepts` ≤ 50、`files` ≤ 50。**Buggy / 恶意 LLM 也无法塞 10MB 正文或 10k 概念进 DB**。
+- **写入限流**（`packages/server/src/server/rate-limiter.ts`）：每 API key 一个 token bucket，30 写入/分钟 突发，2/秒 稳态。`POST /api/v1/memories` 超过配额返 `429 Too Many Requests` + `Retry-After` header。
+- **后台合并阶段**（`packages/server/src/workers/consolidator.ts`）：除了 evict + promote，加了 **Jaccard 合并阶段**—— 复用和实时去重**同一套** Jaccard 公式和阈值，扫所有同租户同类型记忆对，合并 near-duplicate。**实时去重** + **后台合并**形成两级防线。
 - **进程级 consolidation mutex**：`runConsolidation` 内的 `consolidationInFlight` 布尔保证同一租户一次只能跑一次。后台 scheduler 和手动 `POST /api/v1/consolidate` 不会撞车。
-- **pino 结构化日志**（`src/server/logger.ts`）：替换全仓 14 处 `console.*` 错误日志。`LOG_LEVEL` 环境变量调级别，默认 `info`。输出 JSON，方便接入 Loki / ELK。
-- **dedup 强化也写 audit log**（`src/db/repositories/memory-repo.ts`）：`reinforceExisting` 触发时往 `access_logs` 插一条 `source: 'dedup_reinforce'` 记录，让"被强化过"在审计追踪里可见。
+- **pino 结构化日志**（`packages/server/src/server/logger.ts`）：替换全仓 14 处 `console.*` 错误日志。`LOG_LEVEL` 环境变量调级别，默认 `info`。输出 JSON，方便接入 Loki / ELK。
+- **dedup 强化也写 audit log**（`packages/server/src/db/repositories/memory-repo.ts`）：`reinforceExisting` 触发时往 `access_logs` 插一条 `source: 'dedup_reinforce'` 记录，让"被强化过"在审计追踪里可见。
 
 ---
 
@@ -391,7 +391,7 @@ npm install @xenova/transformers
 - 可通过 `fallbackOnError: false` 关闭降级（让错误冒泡，便于排查）。
 - 输出维度与配置不匹配时，**截断或补零**到目标维度（与 `vector-search.ts` 的优雅降级一致）。
 
-更多细节见 [`src/providers/embedding/local-xenova.ts`](./src/providers/embedding/local-xenova.ts) 和 [`src/types/xenova.d.ts`](./src/types/xenova.d.ts)。
+更多细节见 [`packages/server/src/providers/embedding/local-xenova.ts`](./packages/server/src/providers/embedding/local-xenova.ts) 和 [`packages/server/src/types/xenova.d.ts`](./packages/server/src/types/xenova.d.ts)。
 
 ---
 

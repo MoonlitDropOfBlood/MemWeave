@@ -25,26 +25,45 @@ All data lives in a local SQLite file. **No mandatory external dependencies** (b
 
 ## 5-minute quickstart
 
-### 1. Install
+### Option A — from npm (recommended for users)
+
+MemWeave ships as three independent npm packages under the `mem-weave` scope:
+
+| Package | Purpose | What you get |
+|---|---|---|
+| [`@mem-weave/server`](https://www.npmjs.com/package/@mem-weave/server) | Fastify + SQLite server + CLI | `memweave` global command |
+| [`@mem-weave/mcp`](https://www.npmjs.com/package/@mem-weave/mcp) | stdio MCP server with 10 `memory_*` tools | `memweave-mcp` global command |
+| [`@mem-weave/opencode-plugin`](https://www.npmjs.com/package/@mem-weave/opencode-plugin) | OpenCode plugin — auto-injection + auto MCP registration | Loaded by OpenCode |
+
+Quick install:
+
+```bash
+npm install -g @mem-weave/server @mem-weave/mcp
+memweave init                # generates memweave.config.jsonc + data dir
+memweave start               # foreground
+```
+
+OpenCode users, additionally:
+
+```bash
+npm install -g @mem-weave/opencode-plugin
+```
+
+Then add `"@mem-weave/opencode-plugin"` to the `plugin` array in `~/.config/opencode/opencode.json`.
+
+### Option B — from source (for development)
 
 ```bash
 git clone <repo-url> memweave
 cd memweave
 npm install
+npm run dev                  # builds web + starts server on :3131
 ```
 
-### 2. Initialize config
+### 3. Start the service (Option A)
 
 ```bash
-npm run cli -- init
-```
-
-This generates `memweave.config.jsonc` in the current directory (data dir, port, tenant API key, etc.).
-
-### 3. Start the service
-
-```bash
-npm run dev
+memweave start
 ```
 
 The service listens on `http://127.0.0.1:3131` by default.
@@ -117,8 +136,10 @@ See [`docs/`](./docs/) for full design docs.
 
 ## CLI cheatsheet
 
+The `memweave` global command is installed by `@mem-weave/server`.
+
 ```bash
-npm run cli -- <command>
+memweave <command>
 ```
 
 | Command | Description |
@@ -133,13 +154,13 @@ npm run cli -- <command>
 | `version` | Print version |
 | `help` | Show help |
 
-> **Tip:** after `npm run build && npm link`, `memweave` and `memweave-mcp` become global commands.
+> The `mcp` subcommand was removed in v0.2 — install `@mem-weave/mcp` to get the `memweave-mcp` stdio MCP server. The `memweave mcp` invocation now throws a clear migration error pointing at the new package.
 
 ---
 
 ## REST API overview
 
-All routes are prefixed `/api/v1/`. See `src/rest/routes/` for the full set.
+All routes are prefixed `/api/v1/`. See `packages/server/src/rest/routes/` for the full set.
 
 | Endpoint | Method | Purpose |
 |---|---|---|
@@ -171,8 +192,7 @@ Launch via `npm run mcp` (stdio transport). Plug into Claude Desktop / Cursor / 
   "mcpServers": {
     "memweave": {
       "command": "npx",
-      "args": ["tsx", "src/mcp/index.ts"],
-      "cwd": "/path/to/memweave",
+      "args": ["-y", "@mem-weave/mcp"],
       "env": { "MEMWEAVE_URL": "http://127.0.0.1:3131" }
     }
   }
@@ -200,13 +220,19 @@ All tools call the server's REST API through `MemweaveClient`. Override the serv
 
 ## OpenCode plugin (auto-injection)
 
-`src/plugin/` ships an OpenCode plugin called `MemweaveInjectPlugin` that **automatically injects relevant memory** into the prompt sent to the LLM — the agent doesn't have to call any tool.
+`@mem-weave/opencode-plugin` ships an OpenCode plugin called `MemweaveInjectPlugin` that **automatically injects relevant memory** into the prompt sent to the LLM — the agent doesn't have to call any tool.
 
-**Enable it** (in `~/.config/opencode/opencode.json`):
+**Enable it:**
+
+```bash
+npm install -g @mem-weave/opencode-plugin
+```
+
+Then in `~/.config/opencode/opencode.json`:
 
 ```json
 {
-  "plugins": ["/path/to/memweave/src/plugin/index.ts"]
+  "plugins": ["@mem-weave/opencode-plugin"]
 }
 ```
 
@@ -255,7 +281,7 @@ MemWeave's search results include the **full memory body** (`content` field), bu
 
 ### What the injected XML looks like
 
-The server (in `src/injection/formatter.ts` and `src/plugin/injector.ts`) renders each `<memory>` block with `<title>` + `<summary>` only — **never** with `<content>`:
+The server (in `packages/server/src/injection/formatter.ts`) renders each `<memory>` block with `<title>` + `<summary>` only — **never** with `<content>`:
 
 ```xml
 <memory-context phase="session_start" count="12">
@@ -286,16 +312,16 @@ In compact mode, the injection sort order is: **tier** (`long` > `medium` > `sho
 
 ### How the loop actually closes
 
-Can the LLM *really* call `memory_expand` and get the full body? **In OpenCode, yes** — the OpenCode plugin (`src/plugin/index.ts`) uses the **`config` hook** to register the bundled MemWeave MCP server (`src/mcp/index.ts`, 10 tools) with OpenCode at plugin-load time. OpenCode auto-connects, the 10 `memory_*` tools appear in the LLM's tool list, and the LLM can call them like any built-in.
+Can the LLM *really* call `memory_expand` and get the full body? **In OpenCode, yes** — the OpenCode plugin (`packages/opencode-plugin/src/index.ts`) uses the **`config` hook** to register `@mem-weave/mcp` (10 tools) with OpenCode at plugin-load time. OpenCode auto-connects, the 10 `memory_*` tools appear in the LLM's tool list, and the LLM can call them like any built-in.
 
 The full round-trip:
 
-1. **Plugin loads** → `config` hook runs → OpenCode registers `mcp["memweave"]` = `npx tsx <repo>/src/mcp/index.ts`
+1. **Plugin loads** → `config` hook runs → OpenCode registers `mcp["memweave"]` = `npx -y @mem-weave/mcp`
 2. **OpenCode auto-connects** to the MCP server → the 10 `memory_*` tools become available to the LLM
 3. **LLM starts** → `experimental.chat.system.transform` fires → summary-only `<memory-context>` XML is appended to the system prompt
 4. **LLM sees `m_abc` is relevant** → calls `memory_expand({ memoryId: "m_abc" })` → MCP server proxies to REST `/api/v1/memories/:id` → LLM gets the full `content`
 
-Outside OpenCode (Claude Desktop, Cursor, etc.) the same loop is available via the `memweave-mcp` bin — same server, same 10 tools, identical behavior.
+Outside OpenCode (Claude Desktop, Cursor, etc.) the same loop is available via the `memweave-mcp` bin (also from `@mem-weave/mcp`) — same server, same 10 tools, identical behavior.
 
 ### Write-side dedup (server-side, zero token cost)
 
@@ -326,12 +352,12 @@ The read side is closed — but what about the write side? `memory_save` will **
 
 ### Write-side companion: input limits + rate limiting + background merge + structured logging
 
-- **Hard limits in `CreateMemoryInputSchema`** (`src/core/types.ts`): `content` ≤ 100,000 chars, `concepts` ≤ 50, `files` ≤ 50. A buggy or malicious LLM cannot insert 10MB of body or 10k concept tags.
-- **Write rate limit** (`src/server/rate-limiter.ts`): one token bucket per API key, 30 writes/minute burst, 2/sec sustained. `POST /api/v1/memories` returns `429 Too Many Requests` + `Retry-After` header when over quota.
-- **Background merge stage** (`src/workers/consolidator.ts`): in addition to evict + promote, the consolidation pipeline now has a **Jaccard merge stage** that reuses the same formula and threshold as the live write-side dedup. Scans all same-tenant same-type memory pairs and absorbs near-duplicates. Two-layer defense: live dedup + background merge.
+- **Hard limits in `CreateMemoryInputSchema`** (`packages/server/src/core/types.ts`): `content` ≤ 100,000 chars, `concepts` ≤ 50, `files` ≤ 50. A buggy or malicious LLM cannot insert 10MB of body or 10k concept tags.
+- **Write rate limit** (`packages/server/src/server/rate-limiter.ts`): one token bucket per API key, 30 writes/minute burst, 2/sec sustained. `POST /api/v1/memories` returns `429 Too Many Requests` + `Retry-After` header when over quota.
+- **Background merge stage** (`packages/server/src/workers/consolidator.ts`): in addition to evict + promote, the consolidation pipeline now has a **Jaccard merge stage** that reuses the same formula and threshold as the live write-side dedup. Scans all same-tenant same-type memory pairs and absorbs near-duplicates. Two-layer defense: live dedup + background merge.
 - **Process-wide consolidation mutex**: the `consolidationInFlight` boolean inside `runConsolidation` guarantees only one run per tenant. Background scheduler and manual `POST /api/v1/consolidate` never collide.
-- **pino structured logging** (`src/server/logger.ts`): replaces 14 `console.*` error sites across the codebase. `LOG_LEVEL` env var tunes verbosity (default: `info`). JSON output is log-shipper-friendly (Loki, ELK, etc).
-- **Dedup reinforce writes an audit log row** (`src/db/repositories/memory-repo.ts`): when `reinforceExisting` fires, it inserts a `source: 'dedup_reinforce'` row in `access_logs` so "this memory was reinforced" is auditable alongside regular retrievals.
+- **pino structured logging** (`packages/server/src/server/logger.ts`): replaces 14 `console.*` error sites across the codebase. `LOG_LEVEL` env var tunes verbosity (default: `info`). JSON output is log-shipper-friendly (Loki, ELK, etc).
+- **Dedup reinforce writes an audit log row** (`packages/server/src/db/repositories/memory-repo.ts`): when `reinforceExisting` fires, it inserts a `source: 'dedup_reinforce'` row in `access_logs` so "this memory was reinforced" is auditable alongside regular retrievals.
 
 ---
 
@@ -371,7 +397,7 @@ npm install @xenova/transformers
 - Pass `fallbackOnError: false` to disable the fallback (let errors bubble up for debugging).
 - If the model's output dimension doesn't match the configured `dimensions`, the vector is **truncated or zero-padded** to match (consistent with the graceful-degrade style of `vector-search.ts`).
 
-See [`src/providers/embedding/local-xenova.ts`](./src/providers/embedding/local-xenova.ts) and [`src/types/xenova.d.ts`](./src/types/xenova.d.ts) for details.
+See [`packages/server/src/providers/embedding/local-xenova.ts`](./packages/server/src/providers/embedding/local-xenova.ts) and [`packages/server/src/types/xenova.d.ts`](./packages/server/src/types/xenova.d.ts) for details.
 
 ---
 
@@ -397,34 +423,33 @@ Light / dark theme toggle in the top-right.
 
 ### Directory layout
 
-```
-src/
-├── cli/                 # CLI entry
-├── commands/            # memweave subcommands
-├── core/                # core (config, Zod enums, memory decay model)
-├── db/                  # SQLite schema + repositories
-│   └── repositories/    # Memory / Session / Edge / Device / Stats / ConsolidationRun
-├── injection/           # injection packaging (XML / text)
-├── mcp/                 # Model Context Protocol tools
-│   └── tools/           # 10 MCP tool implementations
-├── plugin/              # OpenCode plugin (auto-injects memories into the prompt)
-├── prompts/             # prompt templates (compression / edge extraction / value-gate)
-├── providers/           # Embedding (noop/openai/xenova) / LLM (noop/openai) adapters
-│   ├── embedding/       # NoopEmbeddingProvider / OpenaiCompatible / LocalXenova (opt-in dep)
-│   └── llm/             # NoopLlmProvider / OpenaiLlmProvider
-├── rest/                # HTTP API (Fastify)
-│   └── routes/          # one file per route
-├── retrieval/           # retrieval engine
-│   ├── bm25-search.ts
-│   ├── vector-search.ts
-│   ├── graph-traversal.ts
-│   ├── causal-chain.ts
-│   ├── fusion.ts
-│   └── search-engine.ts
-├── server/              # HTTP server + scheduler
-└── workers/             # consolidation background tasks
+Starting with v0.2, the repo is a monorepo. Each `packages/<name>/` is an independent npm package:
 
-web/                     # React 18 + Vite frontend
+```
+packages/
+├── server/              # @mem-weave/server           — Fastify + SQLite + CLI
+│   └── src/
+│       ├── cli.ts, cli-entry.ts
+│       ├── commands/    # 9 memweave subcommands
+│       ├── core/        # config, Zod enums, decay model
+│       ├── db/          # SQLite schema + 9 repositories
+│       ├── injection/   # injection bundler
+│       ├── prompts/     # prompt templates
+│       ├── providers/   # Embedding (noop/openai/xenova) / LLM (noop/openai)
+│       ├── rest/        # HTTP API (8 route files)
+│       ├── retrieval/   # 4-layer retrieval engine + RRF
+│       ├── server/      # HTTP bootstrap + scheduler
+│       ├── workers/     # Consolidation background tasks
+│       └── types/       # ambient .d.ts
+├── mcp/                 # @mem-weave/mcp              — MCP server
+│   └── src/
+│       ├── index.ts, client.ts, registry.ts
+│       └── tools/       # 10 memory_* tools
+└── opencode-plugin/     # @mem-weave/opencode-plugin  — OpenCode plugin
+    └── src/
+        ├── index.ts, client.ts
+
+web/                     # React 18 + Vite frontend (separate subproject, not in packages/)
 ├── src/
 │   ├── pages/           # 7 pages
 │   ├── components/      # AppShell + common components
@@ -434,22 +459,38 @@ web/                     # React 18 + Vite frontend
 ├── tests/               # vitest + happy-dom
 └── vite.config.ts
 
+tests/                   # cross-monorepo vitest integration + unit tests
 docs/                    # design docs
-tests/                   # server-side vitest unit tests
+scripts/publish.mjs      # one-shot build + publish all 3 npm packages
 ```
 
 ### Common scripts
 
+**In the monorepo (development):**
+
 | Command | Description |
 |---|---|
-| `npm test` | Run all server-side Vitest tests |
-| `npm run typecheck` | TypeScript type check (server) |
-| `npm run build` | Build frontend + server (incl. tsc) |
+| `npm test` | Run all Vitest tests (server integration + units) |
+| `npm run typecheck` | TypeScript type check (entire monorepo) |
+| `npm run build` | Build frontend + all 3 server packages (tsc) |
 | `npm run dev` | Build frontend + start server (foreground) |
 | `npm run web:dev` | Frontend Vite dev server (HMR, port 5173) |
 | `npm run web:build` | Build frontend into `dist/web/` |
-| `npm run cli` | Run the CLI |
-| `npm run mcp` | Run the MCP server |
+
+**Per-package (used by the publish script):**
+
+```bash
+cd packages/server && npm run build             # server only
+cd packages/mcp && npm run build                # mcp only
+cd packages/opencode-plugin && npm run build    # opencode-plugin only
+```
+
+**Publish to npm** (requires `$NPM_TOKEN` in your env or `~/.npmrc`):
+
+```bash
+node scripts/publish.mjs --dry-run    # inspect tarball contents
+node scripts/publish.mjs --publish    # actually publish (server -> mcp -> opencode-plugin)
+```
 
 > Frontend unit tests live in `web/`: `cd web && npm test`.
 
