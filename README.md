@@ -8,18 +8,62 @@
 
 ## 它是什么
 
-MemWeave 是一个让 AI Agent **记住你、记住项目、记住历史** 的本地服务。它提供：
+MemWeave 是一个让 AI Agent **记住上下文、且记住但不撑爆上下文** 的本地服务。
 
-- **结构化记忆**：把事实、决策、偏好、事件、经验教训等工作记忆，存进本地 SQLite 数据库。
-- **四层检索**：关键词（BM25）+ 向量语义 + 图谱关系 + 因果链，按需融合。
-- **上下文注入**：把相关的记忆按智能体友好的 XML 格式打包，喂给 LLM。
+LLM 的上下文窗口有限，把整条记忆原文塞进 system prompt 是对 token 的浪费——Agent 可能只需要其中一两句。MemWeave 的解法是 **渐进披露（Progressive Disclosure）**：
+
+> **只注入摘要，想要细节就主动拉取。**
+
+```
+system prompt  →  memory id + title + summary    ← 低 token 开销
+Agent 主动调   →  memory_expand(id) → 完整正文   ← 拿到细节才花 token
+```
+
+围绕这个核心设计，MemWeave 提供一整套记忆基础设施：
+
+- **结构化记忆**：事实、决策、偏好、事件、经验教训……按 `type` / `tier` 组织在本地 SQLite 中。
+- **四层检索**：关键词（BM25）+ 向量语义 + 图谱关系 + 因果链，按需融合排序。
 - **记忆整理（Consolidation）**：模拟"睡眠"，定期把短期记忆升格为长期、淘汰冷门、发现因果。
-- **Web UI**（Calm Memory Atlas）：在浏览器里浏览、搜索、调试、运维整套记忆系统。
-- **MCP 集成**：通过 Model Context Protocol 直接接入 Claude / Cursor / OpenCode 等 IDE（10 个工具）。
-- **OpenCode 插件**：零调用成本——在每次对话/读文件时自动把相关记忆追加到 system prompt。
+- **自动注入**（OpenCode 插件）：每次对话/读文件时自动把相关摘要追加到 system prompt，零调用成本。
+- **MCP 工具集**：10 个 `memory_*` 工具供 Agent 主动拉取/写入/搜索记忆，闭环渐进披露。
+- **Web UI**（Calm Memory Atlas）：浏览、搜索、调试、运维整套记忆系统。
 - **REST API**：完整的 HTTP 接口，便于脚本和第三方工具调用。
 
-所有数据存储在本地 SQLite 文件中，**无强制外部依赖**（除两个可选组件：向量搜索扩展 `sqlite-vec`，以及本地 Embedding 的 `@xenova/transformers`）。不装任何可选依赖也能完整运行。
+所有数据存储在本地 SQLite，**无强制外部依赖**，不装任何可选依赖也能完整运行。
+
+---
+
+## 渐进披露——核心设计
+
+MemWeave 的检索结果包含**完整的记忆正文**（`content`），但**默认注入给 LLM 的只含摘要**（`title` + `summary`）。这就是渐进披露：在 LLM 上下文窗口有限的前提下，先给最关键的"线索"，让 Agent 主动拉取完整细节。
+
+### 三层消费粒度
+
+| 粒度 | 包含 | 何时返回 | Token |
+|---|---|---|---|
+| **Compact（默认）** | `id` / `type` / `tier` / `title` / `summary` | 注入、搜索（默认 `mode: "compact"`） | 低 |
+| **Full record** | 上述 + `content` / `concepts` / `importance` … | `GET /api/v1/memories/:id` / `MCP memory_expand` | 中-高 |
+| **Plus neighbors** | 上述 + 关联边、相邻会话、因果链 | `MCP memory_expand`（默认带边） | 高 |
+
+### 注入的 XML
+
+```xml
+<memory-context phase="session_start" count="12">
+  <memory id="m_abc" type="fact" tier="long" strength="0.92" importance="8">
+    <title>User prefers strict TypeScript</title>
+    <summary>Always use noImplicitAny, exactOptionalPropertyTypes.</summary>
+  </memory>
+  ...
+</memory-context>
+```
+
+LLM 看到摘要，需要细节就主动调 `memory_expand({ memoryId: "m_abc" })` 拿完整 `content`。
+
+### 闭环
+
+插件在注入摘要的**同时**自动注册了 MCP 工具。OpenCode 中 LLM 直接能调 `memory_expand`——无需额外配置。其他客户端手动配置 `npx @mem-weave/mcp` 效果相同。
+
+> **设计要点**：渐进披露不是"分阶段给不同详略"，而是"**始终摘要，主动拉取才给全文**"。所有注入阶段渲染的 XML 是同一粒度，区别只在"哪批记忆"和"多少条"。
 
 ---
 
@@ -225,56 +269,7 @@ npm install -g @mem-weave/opencode-plugin
 
 > 插件对所有网络错误**静默容错**，服务端不可用时不会打断 Agent。
 
----
-
-## 渐进披露（Progressive Disclosure）
-
-MemWeave 的检索结果包含**完整的记忆正文**（`content` 字段），但**默认注入给 LLM 的只包含摘要**（`title` + `summary`）。这是设计文档 §5.5 明确要求的"渐进披露"原则 —— 在 LLM 上下文窗口有限的前提下，先给最关键的"线索"，让 Agent 主动调用 `memory_expand(memoryId)` 拉取完整细节。
-
-### 三层消费粒度
-
-| 粒度 | 包含 | 何时返回 | Token 开销 |
-|---|---|---|---|
-| **Compact（默认）** | `id` / `type` / `tier` / `title` / `summary` | `POST /api/v1/inject`（所有 4 个阶段）、`POST /api/v1/memories/search`（`mode: "compact"`） | 低 |
-| **Full record** | 上述 + `content` / `concepts` / `files` / `importance` / `confidence` / `strength` / `scopes` 等 | `GET /api/v1/memories/:id` / `MCP memory_expand` | 中-高 |
-| **Plus neighbors** | 上述 + 关联边、相邻会话、因果链 | `MCP memory_expand`（默认带相关边） / `MCP memory_graph_query` | 高 |
-
-### 注入的 XML 长这样
-
-服务端（`packages/server/src/injection/formatter.ts`）渲染的 `<memory>` 块**只**包含 `<title>` + `<summary>`，永远不包含 `<content>`：
-
-```xml
-<memory-context phase="session_start" count="12">
-  <memory id="m_abc" type="fact" tier="long" strength="0.92" importance="8">
-    <title>User prefers strict TypeScript</title>
-    <summary>Always use noImplicitAny, exactOptionalPropertyTypes.</summary>
-  </memory>
-  ...
-</memory-context>
-```
-
-LLM 看到这个 block 后，如果需要更多细节（例如「这条偏好具体怎么落地？」），它会**主动**调用 `memory_expand({ memoryId: "m_abc" })` 拿到完整 `content` 字段和相关边。
-
-### 搜索也支持 compact / full
-
-`POST /api/v1/memories/search` 多了一个 `mode` 参数（`"compact"` | `"full"`）。默认 `compact`：
-
-- `mode: "compact"`（默认，MCP `memory_smart_search` 使用）— 返回 `id` / `type` / `tier` / `title` / `summary` / `finalScore` / `sources`
-- `mode: "full"` — 还包含 `content` / `concepts` / `files` / `importance` / `confidence` / `strength` / `scopes` 等
-
-服务端**默认**走 `compact`，确保列表渲染、批量预览等场景不会因为 `content` 字段过大而撑爆响应体。
-
-### 排序与 token 预算
-
-compact 模式下，注入的排序规则：**tier**（`long` > `medium` > `short`）→ **`strength × importance`**。服务端按 `phase` 设定的 token 预算裁剪（`session_start: 1200` / 其他阶段: 800），保证 LLM 永远只看到预算内最相关的那一批。
-
-> **设计要点**：渐进披露不是"分阶段给不同详略程度"，而是"**始终摘要、主动拉取才给全文**"。所有注入阶段（`session_start` / `prompt_delta` / `file_pack` / `failure_delta`）渲染的 XML 是**同一种**摘要粒度；区别只在于"哪一批记忆"和"多少条"。LLM 想要细节，就调 `memory_expand`。
-
-### 闭环机制
-
-插件在注入摘要的**同时**自动注册了 MCP 工具。LLM 看到摘要中的某条记忆后，直接调 `memory_expand({ memoryId: "m_abc" })` 就能拿到完整 `content`——无需额外配置。OpenCode 之外的客户端手动配置 `npx @mem-weave/mcp` 效果相同。
-
-### 写侧去重（服务端自动，零 token 开销）
+## 写侧去重（服务端自动，零 token 开销）
 
 读侧闭环了，写侧呢？**`memory_save` 不会和当前 context 产生重复内容** —— 因为去重在服务端自动完成，**LLM 零感知、零 token 开销**。
 
