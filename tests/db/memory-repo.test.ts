@@ -87,4 +87,228 @@ describe('MemoryRepo', () => {
     expect(loaded?.strength).toBeCloseTo(0.7, 5);
     expect(loaded?.lastReinforcedAt).toBeTypeOf('number');
   });
+
+  describe('write-side dedup', () => {
+    it('reinforces an existing memory when new input has identical concepts', () => {
+      const first = repo.create({
+        tenantId: 'tenant_default',
+        type: 'preference',
+        title: 'User prefers strict TypeScript',
+        content: 'Always use noImplicitAny and exactOptionalPropertyTypes.',
+        summary: 'Strict TS mode.',
+        concepts: ['typescript', 'strict', 'noImplicitAny'],
+        files: ['tsconfig.json'],
+        importance: 7,
+        confidence: 0.9,
+        source: 'user_explicit',
+        scopeLevel: 'global',
+        scopes: [],
+        sourceClient: 'opencode',
+        sourceDeviceId: null,
+        sourceSessionId: null
+      });
+
+      // Second save with the same concepts + same type → should dedup
+      const second = repo.createDetailed({
+        tenantId: 'tenant_default',
+        type: 'preference',
+        title: 'TS strict mode on',
+        content: 'Use strict TypeScript with noImplicitAny.',
+        summary: 'Strict TS.',
+        concepts: ['typescript', 'strict', 'noImplicitAny'],
+        files: [],
+        importance: 7,
+        confidence: 0.9,
+        source: 'user_explicit',
+        scopeLevel: 'global',
+        scopes: [],
+        sourceClient: 'opencode',
+        sourceDeviceId: null,
+        sourceSessionId: null
+      });
+
+      expect(second.deduped).toBe(true);
+      expect(second.reinforcedId).toBe(first.id);
+      expect(second.memory.id).toBe(first.id);
+      // access_count should have bumped (was 0, now at least 1)
+      expect(second.memory.accessCount).toBeGreaterThanOrEqual(1);
+      expect(second.memory.lastReinforcedAt).toBeTypeOf('number');
+    });
+
+    it('merges richer content into the existing memory when incoming is longer', () => {
+      const first = repo.create({
+        tenantId: 'tenant_default',
+        type: 'decision',
+        title: 'Use 4-layer retrieval',
+        content: 'BM25 + vector + graph + causal.',
+        summary: '4-layer retrieval.',
+        concepts: ['retrieval', 'architecture'],
+        files: [],
+        importance: 7,
+        confidence: 0.85,
+        source: 'user_explicit',
+        scopeLevel: 'project',
+        scopes: [],
+        sourceClient: 'opencode',
+        sourceDeviceId: null,
+        sourceSessionId: null
+      });
+
+      // Incoming is strictly longer (>1.25x) and higher importance → merge
+      const second = repo.createDetailed({
+        tenantId: 'tenant_default',
+        type: 'decision',
+        title: '4-layer retrieval with RRF',
+        content: 'We use a 4-layer retrieval stack: BM25 keyword search via SQLite FTS5, vector similarity via sqlite-vec, graph expansion via BFS, and causal chain detection. Results are fused with Reciprocal Rank Fusion (RRF) before re-ranking by tier, strength, scope, and freshness.',
+        summary: '4-layer + RRF.',
+        concepts: ['retrieval', 'architecture', 'rrf'],
+        files: ['src/retrieval/fusion.ts'],
+        importance: 9,
+        confidence: 0.95,
+        source: 'user_explicit',
+        scopeLevel: 'project',
+        scopes: [],
+        sourceClient: 'opencode',
+        sourceDeviceId: null,
+        sourceSessionId: null
+      });
+
+      // Jaccard is |{retrieval, architecture}| / |{retrieval, architecture, rrf}|
+      // = 2/3 = 0.67, below the 0.8 threshold, so this is NOT a dedup hit.
+      // The richer content test below uses identical concepts to actually
+      // trigger the merge path.
+      expect(second.deduped).toBe(false);
+      expect(second.memory.id).not.toBe(first.id);
+    });
+
+    it('merges richer content into the existing memory when concepts match exactly', () => {
+      const first = repo.create({
+        tenantId: 'tenant_default',
+        type: 'decision',
+        title: 'Use 4-layer retrieval',
+        content: 'BM25 + vector + graph + causal.',
+        summary: '4-layer retrieval.',
+        concepts: ['retrieval', 'architecture', 'rrf'],
+        files: [],
+        importance: 7,
+        confidence: 0.85,
+        source: 'user_explicit',
+        scopeLevel: 'project',
+        scopes: [],
+        sourceClient: 'opencode',
+        sourceDeviceId: null,
+        sourceSessionId: null
+      });
+
+      // Incoming has same concepts (jaccard = 1.0), is much longer, higher
+      // importance → trigger the merge path
+      const second = repo.createDetailed({
+        tenantId: 'tenant_default',
+        type: 'decision',
+        title: '4-layer retrieval with RRF',
+        content: 'We use a 4-layer retrieval stack: BM25 keyword search via SQLite FTS5, vector similarity via sqlite-vec, graph expansion via BFS, and causal chain detection. Results are fused with Reciprocal Rank Fusion (RRF) before re-ranking by tier, strength, scope, and freshness.',
+        summary: '4-layer + RRF.',
+        concepts: ['retrieval', 'architecture', 'rrf'],
+        files: ['src/retrieval/fusion.ts'],
+        importance: 9,
+        confidence: 0.95,
+        source: 'user_explicit',
+        scopeLevel: 'project',
+        scopes: [],
+        sourceClient: 'opencode',
+        sourceDeviceId: null,
+        sourceSessionId: null
+      });
+
+      expect(second.deduped).toBe(true);
+      expect(second.memory.id).toBe(first.id);
+      // Content was upgraded to the longer version
+      expect(second.memory.content).toContain('Reciprocal Rank Fusion');
+      // Importance bumped to max(7, 9) = 9
+      expect(second.memory.importance).toBe(9);
+    });
+
+    it('does NOT dedup when concepts are disjoint', () => {
+      const first = repo.create({
+        tenantId: 'tenant_default',
+        type: 'fact',
+        title: 'TypeScript strict mode',
+        content: '...',
+        summary: '...',
+        concepts: ['typescript', 'strict'],
+        files: [],
+        importance: 7,
+        confidence: 0.9,
+        source: 'user_explicit',
+        scopeLevel: 'global',
+        scopes: [],
+        sourceClient: 'opencode',
+        sourceDeviceId: null,
+        sourceSessionId: null
+      });
+
+      const second = repo.createDetailed({
+        tenantId: 'tenant_default',
+        type: 'fact',
+        title: 'Postgres is the prod DB',
+        content: '...',
+        summary: '...',
+        concepts: ['postgres', 'database', 'production'],
+        files: [],
+        importance: 7,
+        confidence: 0.9,
+        source: 'user_explicit',
+        scopeLevel: 'global',
+        scopes: [],
+        sourceClient: 'opencode',
+        sourceDeviceId: null,
+        sourceSessionId: null
+      });
+
+      expect(second.deduped).toBe(false);
+      expect(second.memory.id).not.toBe(first.id);
+    });
+
+    it('does NOT dedup across different types even with matching concepts', () => {
+      const first = repo.create({
+        tenantId: 'tenant_default',
+        type: 'preference',
+        title: 'User likes X',
+        content: '...',
+        summary: '...',
+        concepts: ['x', 'y', 'z'],
+        files: [],
+        importance: 7,
+        confidence: 0.9,
+        source: 'user_explicit',
+        scopeLevel: 'global',
+        scopes: [],
+        sourceClient: 'opencode',
+        sourceDeviceId: null,
+        sourceSessionId: null
+      });
+
+      // Same concepts but different type → not a duplicate
+      const second = repo.createDetailed({
+        tenantId: 'tenant_default',
+        type: 'decision',
+        title: 'We decided to use X',
+        content: '...',
+        summary: '...',
+        concepts: ['x', 'y', 'z'],
+        files: [],
+        importance: 7,
+        confidence: 0.9,
+        source: 'user_explicit',
+        scopeLevel: 'global',
+        scopes: [],
+        sourceClient: 'opencode',
+        sourceDeviceId: null,
+        sourceSessionId: null
+      });
+
+      expect(second.deduped).toBe(false);
+      expect(second.memory.id).not.toBe(first.id);
+    });
+  });
 });

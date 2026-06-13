@@ -297,6 +297,33 @@ The full round-trip:
 
 Outside OpenCode (Claude Desktop, Cursor, etc.) the same loop is available via the `memweave-mcp` bin — same server, same 10 tools, identical behavior.
 
+### Write-side dedup (server-side, zero token cost)
+
+The read side is closed — but what about the write side? `memory_save` will **not** create duplicates of memories the LLM just saw in the injected XML, because dedup runs server-side automatically. **The LLM never knows, and there is zero token cost.**
+
+**Mechanism**: `MemoryRepo.create` runs a dedup gate before any INSERT:
+
+1. BM25 query on the FTS5 index using the new input's `concepts` field (same tenant, exclude soft-deleted) — sub-millisecond, zero embedding cost
+2. Take top-5 candidates, compute **Jaccard similarity** on the concepts set (|A ∩ B| / |A ∪ B|) for each
+3. If the best Jaccard is **≥ 0.8** AND `type` matches → it's a duplicate. **Reinforce the existing memory** instead of inserting a new row.
+
+**Reinforcement has two behaviors** based on whether the new content is richer:
+
+| Scenario | Action |
+|---|---|
+| New content is similar (length delta < 25%) | Just `recordAccess`: bump `access_count` / `reinforcement_score` / `strength` / `last_reinforced_at` |
+| New content is meaningfully richer (length > 1.25× or higher importance) | **Merge**: upgrade content, union concepts, union files, take `max` of importance |
+
+**Design points**:
+
+- **Zero LLM tokens** — pure server-side BM25 + set similarity
+- **Zero added latency** — FTS5 is sub-millisecond on SQLite
+- **Type must match** — a `fact` is never a duplicate of a `decision`
+- **Callers don't need to change** — `create()` still returns `MemoryRecord`. Use `createDetailed()` if you want the dedup signal: it returns `CreateResult { memory, deduped, reinforcedId }`
+- **REST routes unchanged** — `POST /api/v1/memories` still calls `create()`; behavior is fully transparent to API consumers
+
+> **No "LLM-side dedup"**: that approach (asking the LLM to first `memory_smart_search` before every `memory_save`) burns ~1000 defensive tokens per save even when there's no duplicate. This scheme only spends server CPU **when a duplicate actually exists**, and the LLM never has to think about it.
+
 ---
 
 ## Local embeddings (optional)

@@ -38,7 +38,7 @@ Every repo method takes `tenantId: string` as the **first parameter after the im
 
 | Repo | Responsibility |
 |---|---|
-| `memory-repo.ts` | CRUD on `memories` + `memory_scopes`; tier promotion queries |
+| `memory-repo.ts` | CRUD on `memories` + `memory_scopes`; tier promotion queries; **write-side dedup** (BM25 + Jaccard) |
 | `session-repo.ts` | Session lifecycle + observation count |
 | `observation-repo.ts` | Append-only observation log per session |
 | `edge-repo.ts` | Edges between memories (causal/temporal/entity) |
@@ -55,6 +55,7 @@ Every repo method takes `tenantId: string` as the **first parameter after the im
 - JSON columns (`concepts_json`, `files_json`, `settings_json`) are TEXT; serialize via `JSON.stringify` in the repo, parse on read.
 - Soft delete: set `deleted_at`; never `DELETE FROM`.
 - Use prepared statements (`db.prepare(...).get/all/run`) for hot paths.
+- **`memory-repo.create` auto-dedups via FTS5 + Jaccard** (see `CreateResult`). LLM never knows about dedup; `create()` returns just the (possibly-reinforced) `MemoryRecord` for backward compat. Callers that need the dedup signal use `createDetailed()`.
 
 ## ANTI-PATTERNS
 

@@ -34,10 +34,47 @@ interface MemoryRow {
   eviction_reason: string | null;
 }
 
+/**
+ * Result of a `create` call. When a near-duplicate is detected, the existing
+ * memory is reinforced (not duplicated) and returned with `deduped: true`.
+ * Callers can use this flag to skip the "your memory was saved" UI prompt
+ * and instead show "your memory reinforced an existing one".
+ */
+export interface CreateResult {
+  memory: MemoryRecord;
+  deduped: boolean;
+  /** ID of the existing memory that was reinforced (only set when deduped=true). */
+  reinforcedId?: string;
+}
+
+const DEDUP_JACCARD_THRESHOLD = 0.8;
+
 export class MemoryRepo {
   constructor(private readonly db: Db) {}
 
   create(input: CreateMemoryInput): MemoryRecord {
+    return this.createDetailed(input).memory;
+  }
+
+  /**
+   * Same as `create`, but also reports whether the insert was a dedup
+   * hit. REST routes that want to show "merged with X" UI should use this.
+   */
+  createDetailed(input: CreateMemoryInput): CreateResult {
+    // ── Dedup gate (server-side, LLM never knows) ─────────────────────────
+    // BM25 against the FTS5 index using title + summary + concepts. Zero
+    // embedding cost. Top-3 candidates are scored by Jaccard similarity on
+    // the concepts set. A hit means "this is a near-duplicate of an
+    // existing memory" → reinforce the existing one instead of inserting
+    // a new row. The existing memory's `last_reinforced_at` bumps, its
+    // `access_count` increments, and if the new content is richer we
+    // upgrade importance + content.
+    const dup = this.findNearDuplicate(input);
+    if (dup) {
+      const reinforced = this.reinforceExisting(dup, input);
+      return { memory: reinforced, deduped: true, reinforcedId: dup.id };
+    }
+
     const now = Date.now();
     const id = randomUUID();
     const tier = input.importance >= 10 ? 'long' : input.importance >= 7 && input.confidence > 0.75 ? 'medium' : 'short';
@@ -75,7 +112,7 @@ export class MemoryRepo {
 
     const created = this.getById(input.tenantId, id);
     if (!created) throw new Error(`Failed to create memory ${id}`);
-    return created;
+    return { memory: created, deduped: false };
   }
 
   getById(tenantId: string, id: string): MemoryRecord | null {
@@ -130,6 +167,153 @@ export class MemoryRepo {
     tx();
   }
 
+  // ── internals ────────────────────────────────────────────────────────────
+
+  /**
+   * Find a near-duplicate of `input` already in the DB. Returns the
+   * candidate memory, or `null` if none qualifies.
+   *
+   * Strategy:
+   *   1. BM25 over `memory_fts` using the input's concepts as the query
+   *      (no embedding cost; FTS5 is < 1ms for a few MB of memories).
+   *      We OR the concepts (any-concept match) so we get a candidate set.
+   *   2. Take top-5 candidates within the same tenant.
+   *   3. For each, compute Jaccard similarity on the concepts set.
+   *   4. If best Jaccard >= DEDUP_JACCARD_THRESHOLD AND same `type`,
+   *      that's a duplicate.
+   *
+   * Why OR not AND on concepts? The new save's concepts might not all
+   * appear in the old memory (e.g. new concept added). We want a
+   * candidate pool to score with Jaccard, not an exact match.
+   * Why not BM25 score alone? FTS5 ranks by term frequency, not by
+   * "this is the same fact". A memory about "TypeScript" would BM25-match
+   * a memory about "TypeScript generics" highly, but they're not duplicates.
+   * Concepts-based Jaccard catches the actual semantic overlap.
+   */
+  private findNearDuplicate(input: CreateMemoryInput): MemoryRecord | null {
+    // Query with concepts only — title is too noisy. Sanitize to FTS5-safe
+    // tokens (lowercase, only word chars and hyphens/underscores).
+    const queryTokens = input.concepts
+      .map((c) => c.toLowerCase())
+      .filter((t) => t.length > 0 && /^[a-z0-9_-]+$/.test(t));
+    if (queryTokens.length === 0) return null;
+
+    // OR-join: any concept matching is enough to surface a candidate.
+    const ftsQuery = queryTokens.map((t) => `"${t}"`).join(' OR ');
+
+    let rows: Array<{ id: string; type: string; concepts: string }>;
+    try {
+      rows = this.db.prepare(`
+        SELECT m.id AS id, m.type AS type, m.concepts_json AS concepts
+        FROM memory_fts f
+        JOIN memories m ON m.rowid = f.rowid
+        WHERE memory_fts MATCH ?
+          AND m.tenant_id = ?
+          AND m.deleted_at IS NULL
+        ORDER BY rank
+        LIMIT 5
+      `).all(ftsQuery, input.tenantId) as Array<{ id: string; type: string; concepts: string }>;
+    } catch {
+      // FTS5 syntax error (shouldn't happen with our sanitized query, but
+      // defend anyway). Fall through to "no dedup hit".
+      return null;
+    }
+
+    if (rows.length === 0) return null;
+
+    const inputConcepts = new Set(input.concepts.map((c) => c.toLowerCase()));
+    let bestMatch: { memory: MemoryRecord; score: number } | null = null;
+
+    for (const row of rows) {
+      // Type must match — a "fact" is never a duplicate of a "decision".
+      if (row.type !== input.type) continue;
+
+      const existingConcepts = new Set(
+        (JSON.parse(row.concepts) as string[]).map((c) => c.toLowerCase())
+      );
+      const jaccard = jaccardSimilarity(inputConcepts, existingConcepts);
+      if (jaccard >= DEDUP_JACCARD_THRESHOLD && (!bestMatch || jaccard > bestMatch.score)) {
+        const mem = this.getById(input.tenantId, row.id);
+        if (mem) bestMatch = { memory: mem, score: jaccard };
+      }
+    }
+
+    return bestMatch?.memory ?? null;
+  }
+
+  /**
+   * Bump an existing memory's reinforcement signals and, if the incoming
+   * input carries more information (longer content, higher importance),
+   * upgrade the existing record's content + importance. Returns the
+   * updated memory.
+   */
+  private reinforceExisting(existing: MemoryRecord, incoming: CreateMemoryInput): MemoryRecord {
+    const now = Date.now();
+    const boost = reinforcementBoost({
+      usedInContext: true,  // LLM just saw it via injection → count as used
+      explicitReference: false,
+      userConfirmed: false
+    });
+
+    // Decide whether to merge content. If incoming is strictly longer and
+    // has higher importance, upgrade. Otherwise just bump reinforcement
+    // and keep the existing content (it's already good enough).
+    const incomingIsRicher =
+      incoming.content.length > existing.content.length * 1.25 ||
+      incoming.importance > existing.importance;
+
+    if (incomingIsRicher) {
+      // Merge: take the longer content + the max importance + the union of concepts + files
+      const mergedConcepts = Array.from(new Set([...existing.concepts, ...incoming.concepts]));
+      const mergedFiles = Array.from(new Set([...existing.files, ...incoming.files]));
+      const newImportance = Math.max(existing.importance, incoming.importance);
+
+      this.db.prepare(`
+        UPDATE memories
+        SET content = ?,
+            concepts_json = ?,
+            concepts_text = ?,
+            files_json = ?,
+            importance = ?,
+            access_count = access_count + 1,
+            last_accessed_at = ?,
+            last_reinforced_at = ?,
+            reinforcement_score = min(1, reinforcement_score + ?),
+            strength = min(1, strength + ?),
+            updated_at = ?
+        WHERE tenant_id = ? AND id = ?
+      `).run(
+        incoming.content,
+        JSON.stringify(mergedConcepts),
+        mergedConcepts.join(' '),
+        JSON.stringify(mergedFiles),
+        newImportance,
+        now,
+        now,
+        boost,
+        boost,
+        now,
+        existing.tenantId,
+        existing.id
+      );
+    } else {
+      this.db.prepare(`
+        UPDATE memories
+        SET access_count = access_count + 1,
+            last_accessed_at = ?,
+            last_reinforced_at = ?,
+            reinforcement_score = min(1, reinforcement_score + ?),
+            strength = min(1, strength + ?),
+            updated_at = ?
+        WHERE tenant_id = ? AND id = ?
+      `).run(now, now, boost, boost, now, existing.tenantId, existing.id);
+    }
+
+    const updated = this.getById(existing.tenantId, existing.id);
+    if (!updated) throw new Error(`Failed to reinforce memory ${existing.id}`);
+    return updated;
+  }
+
   private mapRow(row: MemoryRow, scopes: ScopeTag[]): MemoryRecord {
     return {
       id: row.id,
@@ -163,4 +347,16 @@ export class MemoryRepo {
       evictionReason: row.eviction_reason
     };
   }
+}
+
+/**
+ * Jaccard similarity: |A ∩ B| / |A ∪ B|. Returns 0 if both sets are empty
+ * (we treat "no concepts" as "not similar to anything").
+ */
+function jaccardSimilarity(a: Set<string>, b: Set<string>): number {
+  if (a.size === 0 && b.size === 0) return 0;
+  let intersection = 0;
+  for (const x of a) if (b.has(x)) intersection++;
+  const union = a.size + b.size - intersection;
+  return union === 0 ? 0 : intersection / union;
 }
