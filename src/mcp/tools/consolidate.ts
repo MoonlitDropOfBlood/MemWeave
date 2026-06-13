@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import type { McpTool } from '../registry.js';
+import { ConsolidationTriggerResponseSchema } from '../client.js';
 
 export const consolidateTool: McpTool = {
   name: 'memory_consolidate',
@@ -9,6 +10,6 @@ export const consolidateTool: McpTool = {
     dryRun: z.boolean().optional().describe('Preview without making changes')
   },
   handler: async (client, args) => {
-    return client.request('POST', '/api/v1/consolidate', args, z.any());
+    return client.request('POST', '/api/v1/consolidate', args, ConsolidationTriggerResponseSchema);
   }
 };

@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import type { McpTool } from '../registry.js';
+import { GraphResponseSchema } from '../client.js';
 
 export const graphQueryTool: McpTool = {
   name: 'memory_graph_query',
@@ -12,6 +13,6 @@ export const graphQueryTool: McpTool = {
     limit: z.number().optional().describe('Max results')
   },
   handler: async (client, args) => {
-    return client.request('GET', `/api/v1/memories/${encodeURIComponent(args.memoryId as string)}/graph`, args, z.any());
+    return client.request('GET', `/api/v1/memories/${encodeURIComponent(args.memoryId as string)}/graph`, args, GraphResponseSchema);
   }
 };

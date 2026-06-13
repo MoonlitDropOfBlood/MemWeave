@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import type { McpTool } from '../registry.js';
+import { SearchResponseSchema } from '../client.js';
 
 export const fileHistoryTool: McpTool = {
   name: 'memory_file_history',
@@ -12,6 +13,6 @@ export const fileHistoryTool: McpTool = {
     includePatterns: z.boolean().optional().describe('Include code pattern memories')
   },
   handler: async (client, args) => {
-    return client.request('POST', '/api/v1/memories/search', { query: args.filePath, types: args.types, limit: args.limit ?? 10 }, z.any());
+    return client.request('POST', '/api/v1/memories/search', { query: args.filePath, types: args.types, limit: args.limit ?? 10 }, SearchResponseSchema);
   }
 };

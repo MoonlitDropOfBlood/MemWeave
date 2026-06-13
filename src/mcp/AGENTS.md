@@ -33,10 +33,16 @@ src/mcp/
 | `MemweaveClient` | `client.ts` | `setBaseUrl()`, `health()`, plus one method per REST endpoint |
 | `registerTools(server, client)` | `registry.ts` | Wires each tool to the MCP server |
 | `MEMWEAVE_URL` | env | Server base URL (default `http://127.0.0.1:3131`) |
+| `SearchResponseSchema` | `client.ts` | Typed Zod schema for `POST /api/v1/memories/search` responses. Used by 4 tools (`recall`, `smart_search`, `file_history`, `patterns`) |
+| `GraphResponseSchema` | `client.ts` | Typed Zod schema for `GET /api/v1/memories/:id/graph` |
+| `SessionsListResponseSchema` | `client.ts` | Typed Zod schema for `GET /api/v1/sessions` |
+| `ConsolidationTriggerResponseSchema` | `client.ts` | Typed Zod schema for `POST /api/v1/consolidate` |
+| `ForgetResponseSchema` | `client.ts` | Typed Zod schema for `DELETE /api/v1/memories/:id` |
 
 ## CONVENTIONS
 
 - **One file per tool.** Schema is Zod; inputs go through `z.object({...}).parse(args)`.
+- **All response schemas are typed** in `client.ts` and imported by tools. The 8 tools that previously passed `z.any()` now use the named schemas. A malformed server response throws a Zod parse error rather than silently corrupting the LLM context.
 - Tools call `client.*` — never reach into the server process directly. The MCP shim stays stateless.
 - All tool responses are JSON-stringified in `content[0].text`. The LLM parses it.
 - Error handling: catch and return `{ isError: true, content: [{ type: 'text', text: err.message }] }`. Never throw across the tool boundary.

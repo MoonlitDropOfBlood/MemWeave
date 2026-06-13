@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import type { McpTool } from '../registry.js';
+import { ForgetResponseSchema } from '../client.js';
 
 export const forgetTool: McpTool = {
   name: 'memory_forget',
@@ -11,6 +12,6 @@ export const forgetTool: McpTool = {
   },
   handler: async (client, args) => {
     const ids = (args.memoryIds as string[]).join(',');
-    return client.request('DELETE', `/api/v1/memories/${encodeURIComponent(ids)}`, args, z.any());
+    return client.request('DELETE', `/api/v1/memories/${encodeURIComponent(ids)}`, args, ForgetResponseSchema);
   }
 };

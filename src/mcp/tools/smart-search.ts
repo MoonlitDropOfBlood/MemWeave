@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import type { McpTool } from '../registry.js';
+import { SearchResponseSchema } from '../client.js';
 
 export const smartSearchTool: McpTool = {
   name: 'memory_smart_search',
@@ -13,6 +14,6 @@ export const smartSearchTool: McpTool = {
     mode: z.enum(['compact', 'full']).optional().describe('Result detail level')
   },
   handler: async (client, args) => {
-    return client.request('POST', '/api/v1/memories/search', { ...args, mode: args.mode ?? 'compact' }, z.any());
+    return client.request('POST', '/api/v1/memories/search', { ...args, mode: args.mode ?? 'compact' }, SearchResponseSchema);
   }
 };

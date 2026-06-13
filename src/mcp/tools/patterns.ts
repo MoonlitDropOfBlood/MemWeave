@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import type { McpTool } from '../registry.js';
+import { SearchResponseSchema } from '../client.js';
 
 export const patternsTool: McpTool = {
   name: 'memory_patterns',
@@ -10,6 +11,6 @@ export const patternsTool: McpTool = {
     limit: z.number().optional().describe('Max results')
   },
   handler: async (client, args) => {
-    return client.request('POST', '/api/v1/memories/search', { query: 'pattern', ...args, limit: args.limit ?? 10 }, z.any());
+    return client.request('POST', '/api/v1/memories/search', { query: 'pattern', ...args, limit: args.limit ?? 10 }, SearchResponseSchema);
   }
 };

@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import type { McpTool } from '../registry.js';
+import { SessionsListResponseSchema } from '../client.js';
 
 export const sessionsTool: McpTool = {
   name: 'memory_sessions',
@@ -10,6 +11,6 @@ export const sessionsTool: McpTool = {
     sourceClient: z.string().optional().describe('Filter by client type')
   },
   handler: async (client, args) => {
-    return client.request('GET', '/api/v1/sessions', args, z.any());
+    return client.request('GET', '/api/v1/sessions', args, SessionsListResponseSchema);
   }
 };
