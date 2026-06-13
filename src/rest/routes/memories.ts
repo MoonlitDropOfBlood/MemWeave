@@ -7,8 +7,21 @@ import { AccessLogRepo } from '../../db/repositories/access-log-repo.js';
 import { searchMemories } from '../../retrieval/search-engine.js';
 import type { MemoryType, ScopeKey, MemoryTier, EdgeType } from '../../core/types.js';
 import { EdgeTypeSchema } from '../../core/types.js';
+import { RateLimiter } from '../../server/rate-limiter.js';
 
 const TENANT_DEFAULT = 'tenant_default';
+
+/**
+ * Per-tenant rate limiter for memory_write endpoints. The bucket is keyed
+ * by the API key (per device) so a misbehaving client cannot exhaust
+ * the bucket for an honest one. Defaults: 30 writes/minute burst, 2/sec
+ * sustained. Tuned for the "one memory per conversational turn" pattern;
+ * an LLM calling memory_save on every tool use fits comfortably.
+ */
+const writeLimiter: RateLimiter = new RateLimiter({
+  capacity: 30,
+  refillPerSecond: 2
+});
 
 const ListQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(100).default(20),
@@ -86,20 +99,53 @@ export function registerMemoriesRoute(app: FastifyInstance, dbPath: string): voi
 
   // POST /api/v1/memories — create (was in http.ts originally, kept here for cohesion)
   app.post('/api/v1/memories', async (request, reply) => {
+    // Rate-limit by the authenticated device. Pre-bucket — even if Zod
+    // validation fails, the request counts against the limit, since a
+    // flood of invalid writes is still a flood.
+    const apiKey = (request.headers['x-api-key'] as string | undefined) ?? 'anonymous';
+    const limitResult = writeLimiter.consume(apiKey);
+    if (!limitResult.allowed) {
+      return reply
+        .code(429)
+        .header('Retry-After', String(limitResult.retryAfterSec))
+        .send({
+          error: {
+            code: 'RATE_LIMITED',
+            message: `Too many writes. Retry after ${limitResult.retryAfterSec}s.`
+          }
+        });
+    }
+
     const { CreateMemoryInputSchema } = await import('../../core/types.js');
     const input = CreateMemoryInputSchema.parse({
       ...(request.body as Record<string, unknown>),
       tenantId: TENANT_DEFAULT
     });
-    const memory = memoryRepo.create(input);
-    return reply.code(201).send({
-      memoryId: memory.id,
-      type: memory.type,
-      tier: memory.tier,
-      title: memory.title,
-      summary: memory.summary,
-      createdEdges: []
-    });
+    try {
+      const memory = memoryRepo.create(input);
+      return reply.code(201).send({
+        memoryId: memory.id,
+        type: memory.type,
+        tier: memory.tier,
+        title: memory.title,
+        summary: memory.summary,
+        createdEdges: []
+      });
+    } catch (err) {
+      // UUID v4 collision is astronomically unlikely, but a PRIMARY KEY
+      // constraint failure is recoverable: re-throw as a clean 500 with
+      // a hint, not the raw SQLite error.
+      const msg = (err as Error).message ?? '';
+      if (msg.includes('UNIQUE') || msg.includes('PRIMARY KEY')) {
+        return reply.code(500).send({
+          error: {
+            code: 'ID_COLLISION',
+            message: 'Failed to generate a unique memory id. Please retry.'
+          }
+        });
+      }
+      throw err;
+    }
   });
 
   // POST /api/v1/memories/search

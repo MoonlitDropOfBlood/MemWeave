@@ -25,7 +25,7 @@ memweave/
 │   ├── types/          # Ambient .d.ts for optional deps (xenova)
 │   ├── prompts/        # Prompt templates (compression, edge-extract, value-gate)
 │   ├── workers/        # Consolidation pipeline (6 files)
-│   └── server/         # HTTP bootstrap + scheduler + auth
+│   └── server/         # HTTP bootstrap + scheduler + auth + rate-limiter + logger
 ├── web/                # React 18 + Vite 5 frontend
 │   └── src/
 │       ├── pages/      # 7 pages + 7 CSS modules

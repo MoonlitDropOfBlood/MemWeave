@@ -2,6 +2,7 @@ import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 import Database from 'better-sqlite3';
 import { SCHEMA_SQL } from './schema.js';
+import { logger } from '../server/logger.js';
 
 export type Db = Database.Database;
 
@@ -61,8 +62,7 @@ export function openDatabase(path: string, options: OpenDatabaseOptions = {}): D
       // sqlite-vec unavailable — vector search will be a no-op
       // (search engine handles missing vector layer gracefully).
       // We intentionally do not throw — rest of system must work without it.
-      // eslint-disable-next-line no-console
-      console.warn('[db] sqlite-vec not available, vector search disabled:', (err as Error).message);
+      logger.warn({ err: (err as Error).message }, 'sqlite-vec not available, vector search disabled');
     }
   }
 

@@ -324,6 +324,15 @@ OpenCode 之外（Claude Desktop / Cursor 等）调 `memweave-mcp` bin 也走完
 
 > **没有"prompt 检测 / LLM 查重"**：那种方案每次 save 多花 ~1000 tokens 防御性查重，对高频用户是真实成本。本方案**只在重复确实发生时**消耗 server CPU，**LLM 全程不知情**。
 
+### 写侧配套：输入限额 + 限流 + 后台合并 + 日志
+
+- **`CreateMemoryInputSchema` 硬性限额**（`src/core/types.ts`）：`content` ≤ 100,000 字符、`concepts` ≤ 50、`files` ≤ 50。**Buggy / 恶意 LLM 也无法塞 10MB 正文或 10k 概念进 DB**。
+- **写入限流**（`src/server/rate-limiter.ts`）：每 API key 一个 token bucket，30 写入/分钟 突发，2/秒 稳态。`POST /api/v1/memories` 超过配额返 `429 Too Many Requests` + `Retry-After` header。
+- **后台合并阶段**（`src/workers/consolidator.ts`）：除了 evict + promote，加了 **Jaccard 合并阶段**—— 复用和实时去重**同一套** Jaccard 公式和阈值，扫所有同租户同类型记忆对，合并 near-duplicate。**实时去重** + **后台合并**形成两级防线。
+- **进程级 consolidation mutex**：`runConsolidation` 内的 `consolidationInFlight` 布尔保证同一租户一次只能跑一次。后台 scheduler 和手动 `POST /api/v1/consolidate` 不会撞车。
+- **pino 结构化日志**（`src/server/logger.ts`）：替换全仓 14 处 `console.*` 错误日志。`LOG_LEVEL` 环境变量调级别，默认 `info`。输出 JSON，方便接入 Loki / ELK。
+- **dedup 强化也写 audit log**（`src/db/repositories/memory-repo.ts`）：`reinforceExisting` 触发时往 `access_logs` 插一条 `source: 'dedup_reinforce'` 记录，让"被强化过"在审计追踪里可见。
+
 ---
 
 ## 本地 Embedding（可选）

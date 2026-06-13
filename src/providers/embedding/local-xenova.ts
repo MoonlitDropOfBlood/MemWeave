@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import type { EmbeddingProvider } from './index.js';
+import { logger } from '../../server/logger.js';
 
 // `@xenova/transformers` is an optional dependency. We import it dynamically
 // (see `getExtractor` below). The ambient type declaration lives in
@@ -120,15 +121,13 @@ export class LocalXenovaEmbeddingProvider implements EmbeddingProvider {
   private handleError(err: unknown, texts: string[]): Promise<number[][]> {
     if (err instanceof XenovaMissingError) {
       if (!this.warnedMissingDep) {
-        // eslint-disable-next-line no-console
-        console.warn(`[local-xenova] ${err.message} — falling back to noop embeddings.`);
+        logger.warn({ err: err.message }, 'local-xenova unavailable, falling back to noop embeddings');
         this.warnedMissingDep = true;
       }
       // Reset so a future install can pick it up.
       this.extractorPromise = null;
     } else {
-      // eslint-disable-next-line no-console
-      console.warn(`[local-xenova] embedding failed: ${(err as Error).message}`);
+      logger.warn({ err: (err as Error).message }, 'local-xenova embedding failed');
       // Reset so transient errors (network blip, OOM) can recover.
       this.extractorPromise = null;
     }

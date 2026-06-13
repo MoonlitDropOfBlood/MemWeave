@@ -3,26 +3,51 @@ import type { Model } from '@opencode-ai/sdk';
 import { MemweaveInjectClient, type InjectResponse } from './client.js';
 
 const API = process.env.MEMWEAVE_URL || 'http://127.0.0.1:3131';
-const TIMEOUT = 10000;
+const TIMEOUT = Number(process.env.MEMWEAVE_PLUGIN_TIMEOUT) || 10000;
 const FILE_TOOLS = new Set(['Read', 'Edit', 'Write', 'Glob', 'Grep']);
 const FILE_KEYS = ['filePath', 'file_path', 'path', 'file', 'pattern'];
-const INJECTED_CACHE = new Map<string, Set<string>>();
+
+/** Evict cache entries older than this. Caps memory leak across long sessions. */
+const CACHE_TTL_MS = 60 * 60 * 1000; // 1 hour
+
+interface CacheEntry {
+  ids: Set<string>;
+  lastSeenMs: number;
+}
+
+const INJECTED_CACHE = new Map<string, CacheEntry>();
+const PENDING_FILE_PACKS = new Map<string, CacheEntry>();
+
+function touchCache(map: Map<string, CacheEntry>, sessionId: string): CacheEntry {
+  let entry = map.get(sessionId);
+  if (!entry) {
+    entry = { ids: new Set<string>(), lastSeenMs: Date.now() };
+    map.set(sessionId, entry);
+  } else {
+    entry.lastSeenMs = Date.now();
+  }
+  return entry;
+}
 
 /**
- * Pending file_pack XMLs that we couldn't push to the system prompt at the
- * moment of `tool.execute.before` (the hook output has no `system` array).
- * We flush them on the next `experimental.chat.system.transform` call.
+ * Periodic sweep: drop entries that haven't been touched in CACHE_TTL_MS.
+ * Prevents the maps from growing unbounded over the OpenCode process lifetime.
  */
-const PENDING_FILE_PACKS = new Map<string, Set<string>>();
-
-function getPendingFilePacks(sessionId: string): Set<string> {
-  let s = PENDING_FILE_PACKS.get(sessionId);
-  if (!s) {
-    s = new Set<string>();
-    PENDING_FILE_PACKS.set(sessionId, s);
-  }
-  return s;
+function startCacheSweeper(): NodeJS.Timeout {
+  const timer = setInterval(() => {
+    const cutoff = Date.now() - CACHE_TTL_MS;
+    for (const [key, entry] of INJECTED_CACHE) {
+      if (entry.lastSeenMs < cutoff) INJECTED_CACHE.delete(key);
+    }
+    for (const [key, entry] of PENDING_FILE_PACKS) {
+      if (entry.lastSeenMs < cutoff) PENDING_FILE_PACKS.delete(key);
+    }
+  }, CACHE_TTL_MS);
+  if (typeof timer.unref === 'function') timer.unref();
+  return timer;
 }
+
+const _cacheSweeper = startCacheSweeper();
 
 function extractFilePaths(args: Record<string, unknown>): string[] {
   const files: string[] = [];
@@ -71,6 +96,19 @@ export const MemweaveInjectPlugin: Plugin = async (ctx) => {
     // uses the same mechanism to ship its own MCP servers.
     config: async (config) => {
       config.mcp = config.mcp ?? {};
+      // Guard against name collision. If the user already has an MCP server
+      // named 'memweave' (from another plugin, say), merging into it would
+      // silently clobber it. Refuse and surface a clear message in the
+      // OpenCode logs instead.
+      if (config.mcp['memweave'] && config.mcp['memweave'].type !== 'local') {
+        // eslint-disable-next-line no-console
+        console.warn(
+          '[memweave] config.mcp["memweave"] is already set to a non-local server; ' +
+          'skipping registration. If you want MemWeave tools, remove or rename ' +
+          'the existing entry.'
+        );
+        return;
+      }
       config.mcp['memweave'] = {
         type: 'local',
         command: resolveMcpServerCommand(ctx.directory),
@@ -92,8 +130,9 @@ export const MemweaveInjectPlugin: Plugin = async (ctx) => {
       output: { system: string[] }
     ) => {
       const sessionId = _input.sessionID ?? 'default';
-      const alreadyInjected = sessionInjected.get(sessionId) ?? new Set<string>();
-      const phase: 'session_start' | 'prompt_delta' = sessionInjected.has(sessionId) ? 'prompt_delta' : 'session_start';
+      const injectedEntry = touchCache(INJECTED_CACHE, sessionId);
+      const alreadyInjected = injectedEntry.ids;
+      const phase: 'session_start' | 'prompt_delta' = alreadyInjected.size > 0 ? 'prompt_delta' : 'session_start';
 
       let response: InjectResponse;
       try {
@@ -112,15 +151,14 @@ export const MemweaveInjectPlugin: Plugin = async (ctx) => {
         for (const id of response.memoryIds) {
           alreadyInjected.add(id);
         }
-        sessionInjected.set(sessionId, alreadyInjected);
       }
 
       // Flush any pending file_pack XMLs collected from prior
       // tool.execute.before calls (see below).
-      const pending = PENDING_FILE_PACKS.get(sessionId);
-      if (pending && pending.size > 0) {
-        for (const xml of pending) output.system.push(xml);
-        PENDING_FILE_PACKS.delete(sessionId);
+      const pendingEntry = PENDING_FILE_PACKS.get(sessionId);
+      if (pendingEntry && pendingEntry.ids.size > 0) {
+        for (const xml of pendingEntry.ids) output.system.push(xml);
+        pendingEntry.ids.clear();
       }
     },
 
@@ -139,7 +177,7 @@ export const MemweaveInjectPlugin: Plugin = async (ctx) => {
       const sessionId = input.sessionID;
       const files = extractFilePaths(output.args);
       if (files.length === 0) return;
-      const alreadyInjected = sessionInjected.get(sessionId) ?? new Set<string>();
+      const alreadyInjected = touchCache(INJECTED_CACHE, sessionId).ids;
 
       try {
         const response = await client.requestInjection({
@@ -149,8 +187,8 @@ export const MemweaveInjectPlugin: Plugin = async (ctx) => {
           alreadyInjected: [...alreadyInjected]
         });
         if (response.contextXml) {
-          getPendingFilePacks(sessionId).add(response.contextXml);
-          // Note: do NOT add response.memoryIds to sessionInjected here.
+          touchCache(PENDING_FILE_PACKS, sessionId).ids.add(response.contextXml);
+          // Note: do NOT add response.memoryIds to alreadyInjected here.
           // The XML hasn't been pushed to the system prompt yet. Wait for
           // the next system.transform to actually append it, then add the
           // ids there.

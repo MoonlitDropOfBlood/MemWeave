@@ -1,6 +1,7 @@
 import { openDatabase } from '../db/database.js';
 import { runConsolidation, type ConsolidationResult } from '../workers/consolidator.js';
 import { ConsolidationRunRepo } from '../db/repositories/consolidation-run-repo.js';
+import { logger } from './logger.js';
 
 export interface SchedulerOptions {
   dbPath: string;
@@ -53,15 +54,14 @@ export function startConsolidationScheduler(options: SchedulerOptions): Schedule
           endedAt,
           promoted: result.promotedIds,
           evicted: result.evictedIds,
-          merged: [], // v1: merge step is not implemented
+          merged: result.mergedPairs,
           edgesCreated: 0,
           contradictionFound: 0,
           dryRun: false,
           summary: result.summary
         });
       } catch (err) {
-        // eslint-disable-next-line no-console
-        console.warn('[scheduler] failed to record consolidation run:', (err as Error).message);
+        logger.warn({ err: (err as Error).message }, 'failed to record consolidation run');
       }
 
       const payload = {
@@ -86,8 +86,7 @@ export function startConsolidationScheduler(options: SchedulerOptions): Schedule
       } catch (err) {
         // Swallow errors in background; the next interval will try again.
         // We intentionally do not throw here to keep the scheduler alive.
-        // eslint-disable-next-line no-console
-        console.error('[scheduler] consolidation run failed:', err);
+        logger.error({ err }, 'consolidation run failed');
       }
       schedule();
     }, interval);

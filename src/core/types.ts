@@ -48,14 +48,28 @@ export const ScopeTagSchema = z.object({
 });
 export type ScopeTag = z.infer<typeof ScopeTagSchema>;
 
+/**
+ * Hard limits on user-controllable memory fields. These exist to keep a
+ * buggy or malicious LLM from inserting 10MB of text, 10k concepts, etc.,
+ * which would balloon the FTS5 index and slow down every search.
+ */
+export const MEMORY_LIMITS = {
+  /** Max body length in chars. ~30k tokens; well above any single memory. */
+  CONTENT_MAX: 100_000,
+  /** Max concept count per memory. Real memories have 3-10. */
+  CONCEPTS_MAX: 50,
+  /** Max file associations per memory. */
+  FILES_MAX: 50
+} as const;
+
 export const CreateMemoryInputSchema = z.object({
   tenantId: z.string().min(1),
   type: MemoryTypeSchema,
   title: z.string().min(1).max(120),
-  content: z.string().min(1),
+  content: z.string().min(1).max(MEMORY_LIMITS.CONTENT_MAX),
   summary: z.string().min(1).max(500),
-  concepts: z.array(z.string().min(1)).default([]),
-  files: z.array(z.string().min(1)).default([]),
+  concepts: z.array(z.string().min(1).max(100)).max(MEMORY_LIMITS.CONCEPTS_MAX).default([]),
+  files: z.array(z.string().min(1).max(500)).max(MEMORY_LIMITS.FILES_MAX).default([]),
   importance: z.number().int().min(1).max(10),
   confidence: z.number().min(0).max(1),
   source: MemorySourceSchema,
@@ -90,7 +104,8 @@ export const AccessSourceSchema = z.enum([
   'context_inject',
   'file_history',
   'graph_query',
-  'manual_view'
+  'manual_view',
+  'dedup_reinforce'
 ]);
 export type AccessSource = z.infer<typeof AccessSourceSchema>;
 

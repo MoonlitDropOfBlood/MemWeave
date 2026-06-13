@@ -3,6 +3,7 @@ import { EdgeRepo } from '../db/repositories/edge-repo.js';
 import { MemoryRepo } from '../db/repositories/memory-repo.js';
 import type { LlmProvider } from '../providers/llm/index.js';
 import type { EdgeType, MemoryRecord } from '../core/types.js';
+import { logger } from '../server/logger.js';
 
 interface EdgeCandidate {
   type: EdgeType;
@@ -122,8 +123,7 @@ export function startGraphWorker(options: GraphWorkerOptions): GraphWorkerHandle
       try {
         await runOnce();
       } catch (err) {
-        // eslint-disable-next-line no-console
-        console.error('[graph-worker] run failed:', err);
+        logger.error({ err }, 'graph-worker run failed');
       }
       schedule();
     }, interval);

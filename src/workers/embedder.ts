@@ -1,6 +1,7 @@
 import { openDatabase } from '../db/database.js';
 import { VectorRepo } from '../db/repositories/vector-repo.js';
 import type { EmbeddingProvider } from '../providers/embedding/index.js';
+import { logger } from '../server/logger.js';
 
 export interface EmbedderOptions {
   dbPath: string;
@@ -87,8 +88,7 @@ export function startEmbedderWorker(options: EmbedderOptions): EmbedderHandle {
             }
           }
         } catch (err) {
-          // eslint-disable-next-line no-console
-          console.error('[embedder] batch embedding failed:', (err as Error).message);
+          logger.error({ err: (err as Error).message }, 'batch embedding failed');
           result.failed = candidates.length;
         }
       }
@@ -105,8 +105,7 @@ export function startEmbedderWorker(options: EmbedderOptions): EmbedderHandle {
       try {
         await runOnce();
       } catch (err) {
-        // eslint-disable-next-line no-console
-        console.error('[embedder] run failed:', err);
+        logger.error({ err }, 'run failed');
       }
       schedule();
     }, interval);

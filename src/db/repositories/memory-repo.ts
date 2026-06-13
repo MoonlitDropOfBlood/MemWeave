@@ -246,6 +246,11 @@ export class MemoryRepo {
    * input carries more information (longer content, higher importance),
    * upgrade the existing record's content + importance. Returns the
    * updated memory.
+   *
+   * Writes an `access_logs` row with `source: 'dedup_reinforce'` so the
+   * audit trail is consistent with `recordAccess()` — operators can
+   * see "this memory was reinforced by a dedup hit" the same way they
+   * see regular retrievals.
    */
   private reinforceExisting(existing: MemoryRecord, incoming: CreateMemoryInput): MemoryRecord {
     const now = Date.now();
@@ -262,52 +267,77 @@ export class MemoryRepo {
       incoming.content.length > existing.content.length * 1.25 ||
       incoming.importance > existing.importance;
 
-    if (incomingIsRicher) {
-      // Merge: take the longer content + the max importance + the union of concepts + files
-      const mergedConcepts = Array.from(new Set([...existing.concepts, ...incoming.concepts]));
-      const mergedFiles = Array.from(new Set([...existing.files, ...incoming.files]));
-      const newImportance = Math.max(existing.importance, incoming.importance);
+    const tx = this.db.transaction(() => {
+      if (incomingIsRicher) {
+        // Merge: take the longer content + the max importance + the union of concepts + files
+        const mergedConcepts = Array.from(new Set([...existing.concepts, ...incoming.concepts]));
+        const mergedFiles = Array.from(new Set([...existing.files, ...incoming.files]));
+        const newImportance = Math.max(existing.importance, incoming.importance);
 
+        this.db.prepare(`
+          UPDATE memories
+          SET content = ?,
+              concepts_json = ?,
+              concepts_text = ?,
+              files_json = ?,
+              importance = ?,
+              access_count = access_count + 1,
+              last_accessed_at = ?,
+              last_reinforced_at = ?,
+              reinforcement_score = min(1, reinforcement_score + ?),
+              strength = min(1, strength + ?),
+              updated_at = ?
+          WHERE tenant_id = ? AND id = ?
+        `).run(
+          incoming.content,
+          JSON.stringify(mergedConcepts),
+          mergedConcepts.join(' '),
+          JSON.stringify(mergedFiles),
+          newImportance,
+          now,
+          now,
+          boost,
+          boost,
+          now,
+          existing.tenantId,
+          existing.id
+        );
+      } else {
+        this.db.prepare(`
+          UPDATE memories
+          SET access_count = access_count + 1,
+              last_accessed_at = ?,
+              last_reinforced_at = ?,
+              reinforcement_score = min(1, reinforcement_score + ?),
+              strength = min(1, strength + ?),
+              updated_at = ?
+          WHERE tenant_id = ? AND id = ?
+        `).run(now, now, boost, boost, now, existing.tenantId, existing.id);
+      }
+
+      // Audit log row — same shape as recordAccess() emits, so the
+      // /api/v1/memories/:id/access-logs endpoint surfaces dedup
+      // reinforcements uniformly with retrieval accesses.
       this.db.prepare(`
-        UPDATE memories
-        SET content = ?,
-            concepts_json = ?,
-            concepts_text = ?,
-            files_json = ?,
-            importance = ?,
-            access_count = access_count + 1,
-            last_accessed_at = ?,
-            last_reinforced_at = ?,
-            reinforcement_score = min(1, reinforcement_score + ?),
-            strength = min(1, strength + ?),
-            updated_at = ?
-        WHERE tenant_id = ? AND id = ?
+        INSERT INTO access_logs (
+          id, tenant_id, memory_id, session_id, device_id,
+          source, query, rank, score, used_in_context, accessed_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).run(
-        incoming.content,
-        JSON.stringify(mergedConcepts),
-        mergedConcepts.join(' '),
-        JSON.stringify(mergedFiles),
-        newImportance,
-        now,
-        now,
-        boost,
-        boost,
-        now,
+        randomUUID(),
         existing.tenantId,
-        existing.id
+        existing.id,
+        incoming.sourceSessionId,
+        incoming.sourceDeviceId,
+        'dedup_reinforce',
+        null,
+        null,
+        null,
+        1,  // usedInContext = true (the LLM was about to use it)
+        now
       );
-    } else {
-      this.db.prepare(`
-        UPDATE memories
-        SET access_count = access_count + 1,
-            last_accessed_at = ?,
-            last_reinforced_at = ?,
-            reinforcement_score = min(1, reinforcement_score + ?),
-            strength = min(1, strength + ?),
-            updated_at = ?
-        WHERE tenant_id = ? AND id = ?
-      `).run(now, now, boost, boost, now, existing.tenantId, existing.id);
-    }
+    });
+    tx();
 
     const updated = this.getById(existing.tenantId, existing.id);
     if (!updated) throw new Error(`Failed to reinforce memory ${existing.id}`);

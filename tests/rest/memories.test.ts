@@ -173,3 +173,136 @@ describe('GET /api/v1/memories/:id/access-logs', () => {
     expect(body.total).toBe(0);
   });
 });
+
+describe('POST /api/v1/memories — write-side dedup (E2E via HTTP)', () => {
+  it('returns 201 with same id when second save is a near-duplicate (jaccard=1)', async () => {
+    const first = await createMemory({
+      type: 'preference',
+      title: 'User prefers strict TypeScript',
+      content: 'Always use noImplicitAny and exactOptionalPropertyTypes.',
+      summary: 'Strict TS mode.',
+      concepts: ['typescript', 'strict', 'noImplicitAny'],
+      files: ['tsconfig.json'],
+      importance: 7, confidence: 0.9,
+      source: 'user_explicit',
+      scopeLevel: 'global',
+      scopes: []
+    });
+
+    const second = await createMemory({
+      type: 'preference',
+      title: 'TS strict mode on',
+      content: 'Use strict TypeScript with noImplicitAny.',
+      summary: 'Strict TS.',
+      concepts: ['typescript', 'strict', 'noImplicitAny'],
+      files: [],
+      importance: 7, confidence: 0.9,
+      source: 'user_explicit',
+      scopeLevel: 'global',
+      scopes: []
+    });
+
+    expect(second.memoryId).toBe(first.memoryId);
+
+    // Verify there's still only one memory in the DB
+    const list = await app.inject({ method: 'GET', url: '/api/v1/memories' });
+    const body = list.json() as { total: number };
+    expect(body.total).toBe(1);
+  });
+
+  it('rejects content longer than MEMORY_LIMITS.CONTENT_MAX with 400', async () => {
+    const tooLong = 'x'.repeat(100_001);
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/v1/memories',
+      payload: {
+        type: 'fact',
+        title: 'T',
+        content: tooLong,
+        summary: 's',
+        concepts: [],
+        files: [],
+        importance: 5, confidence: 0.5,
+        source: 'user_explicit',
+        scopeLevel: 'project',
+        scopes: []
+      }
+    });
+    expect(res.statusCode).toBe(400);
+  });
+
+  it('rejects concepts array longer than MEMORY_LIMITS.CONCEPTS_MAX with 400', async () => {
+    const tooMany = Array.from({ length: 51 }, (_, i) => `c${i}`);
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/v1/memories',
+      payload: {
+        type: 'fact',
+        title: 'T',
+        content: 'c',
+        summary: 's',
+        concepts: tooMany,
+        files: [],
+        importance: 5, confidence: 0.5,
+        source: 'user_explicit',
+        scopeLevel: 'project',
+        scopes: []
+      }
+    });
+    expect(res.statusCode).toBe(400);
+  });
+});
+
+describe('POST /api/v1/memories — rate limiting', () => {
+  it('returns 429 after exceeding the per-API-key burst (30 writes)', async () => {
+    // Use a unique API key so the rate limit bucket is fresh for this test
+    // (other tests share the default 'anonymous' bucket via no header).
+    const apiKey = `test-rate-${Date.now()}-${Math.random()}`;
+
+    // Fire 30 distinct memories (different concepts to avoid dedup).
+    // All should succeed (the bucket starts at capacity=30).
+    const successes: string[] = [];
+    for (let i = 0; i < 30; i++) {
+      const res = await app.inject({
+        method: 'POST',
+        url: '/api/v1/memories',
+        headers: { 'x-api-key': apiKey },
+        payload: {
+          type: 'fact',
+          title: `T${i}`,
+          content: `c${i}`,
+          summary: `s${i}`,
+          concepts: [`unique-concept-${i}-${Math.random()}`],
+          files: [],
+          importance: 5, confidence: 0.5,
+          source: 'user_explicit',
+          scopeLevel: 'project',
+          scopes: []
+        }
+      });
+      if (res.statusCode === 201) successes.push((res.json() as { memoryId: string }).memoryId);
+    }
+    expect(successes.length).toBe(30);
+
+    // The 31st request should be rate-limited
+    const blocked = await app.inject({
+      method: 'POST',
+      url: '/api/v1/memories',
+      headers: { 'x-api-key': apiKey },
+      payload: {
+        type: 'fact',
+        title: 'overflow',
+        content: 'c',
+        summary: 's',
+        concepts: ['overflow'],
+        files: [],
+        importance: 5, confidence: 0.5,
+        source: 'user_explicit',
+        scopeLevel: 'project',
+        scopes: []
+      }
+    });
+    expect(blocked.statusCode).toBe(429);
+    expect(blocked.headers['retry-after']).toBeDefined();
+  });
+});

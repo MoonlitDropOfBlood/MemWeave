@@ -1,5 +1,6 @@
 import type { Db } from '../db/database.js';
 import type { MemoryRecord, ScopeTag } from '../core/types.js';
+import { logger } from '../server/logger.js';
 
 interface MemoryRow {
   id: string;
@@ -99,7 +100,7 @@ export function bm25Search(
       bm25Score: row.bm25_score
     }));
   } catch (err) {
-    console.error('[bm25Search] search failed:', err);
+    logger.error({ err }, 'bm25 search failed');
     return [];
   }
 }

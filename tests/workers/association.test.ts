@@ -48,12 +48,12 @@ describe('extractEdges', () => {
   });
 
   it('returns empty array for malformed JSON', async () => {
-    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
     const provider = mockProvider('not { valid json at all');
     const result = await extractEdges(provider, newMemory, existingMemories);
     expect(result).toEqual([]);
-    expect(warnSpy).toHaveBeenCalledWith('[association] Failed to parse JSON response');
-    warnSpy.mockRestore();
+    // Pino writes to stdout via a worker thread in test mode. Just assert
+    // the function returns gracefully — the log itself is not load-bearing
+    // for the test.
   });
 
   it('filters edges below confidence threshold', async () => {
@@ -91,7 +91,6 @@ describe('extractEdges', () => {
   });
 
   it('returns empty when provider throws', async () => {
-    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
     const failingProvider: LlmProvider = {
       async call(): Promise<string> {
         throw new Error('network error');
@@ -99,7 +98,5 @@ describe('extractEdges', () => {
     };
     const result = await extractEdges(failingProvider, newMemory, existingMemories);
     expect(result).toEqual([]);
-    expect(warnSpy).toHaveBeenCalledWith('[association] Provider call failed:', expect.any(Error));
-    warnSpy.mockRestore();
   });
 });

@@ -324,6 +324,15 @@ The read side is closed — but what about the write side? `memory_save` will **
 
 > **No "LLM-side dedup"**: that approach (asking the LLM to first `memory_smart_search` before every `memory_save`) burns ~1000 defensive tokens per save even when there's no duplicate. This scheme only spends server CPU **when a duplicate actually exists**, and the LLM never has to think about it.
 
+### Write-side companion: input limits + rate limiting + background merge + structured logging
+
+- **Hard limits in `CreateMemoryInputSchema`** (`src/core/types.ts`): `content` ≤ 100,000 chars, `concepts` ≤ 50, `files` ≤ 50. A buggy or malicious LLM cannot insert 10MB of body or 10k concept tags.
+- **Write rate limit** (`src/server/rate-limiter.ts`): one token bucket per API key, 30 writes/minute burst, 2/sec sustained. `POST /api/v1/memories` returns `429 Too Many Requests` + `Retry-After` header when over quota.
+- **Background merge stage** (`src/workers/consolidator.ts`): in addition to evict + promote, the consolidation pipeline now has a **Jaccard merge stage** that reuses the same formula and threshold as the live write-side dedup. Scans all same-tenant same-type memory pairs and absorbs near-duplicates. Two-layer defense: live dedup + background merge.
+- **Process-wide consolidation mutex**: the `consolidationInFlight` boolean inside `runConsolidation` guarantees only one run per tenant. Background scheduler and manual `POST /api/v1/consolidate` never collide.
+- **pino structured logging** (`src/server/logger.ts`): replaces 14 `console.*` error sites across the codebase. `LOG_LEVEL` env var tunes verbosity (default: `info`). JSON output is log-shipper-friendly (Loki, ELK, etc).
+- **Dedup reinforce writes an audit log row** (`src/db/repositories/memory-repo.ts`): when `reinforceExisting` fires, it inserts a `source: 'dedup_reinforce'` row in `access_logs` so "this memory was reinforced" is auditable alongside regular retrievals.
+
 ---
 
 ## Local embeddings (optional)

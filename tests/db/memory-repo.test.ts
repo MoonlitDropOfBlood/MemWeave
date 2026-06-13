@@ -311,4 +311,147 @@ describe('MemoryRepo', () => {
       expect(second.memory.id).not.toBe(first.id);
     });
   });
+
+  describe('Jaccard threshold boundary', () => {
+    /**
+     * The dedup threshold is 0.8. Boundary tests pin the behavior so an
+     * accidental threshold change (or Jaccard rounding bug) gets caught.
+     *
+     * Jaccard = |A ∩ B| / |A ∪ B|.
+     *   {a, b, c, d, e} ∩ {a, b, c, d} = 4
+     *   {a, b, c, d, e} ∪ {a, b, c, d} = 5
+     *   Jaccard = 4/5 = 0.80 — exactly AT the threshold, should dedup.
+     *
+     *   {a, b, c, d, e} ∩ {a, b, c, d, f} = 4
+     *   {a, b, c, d, e} ∪ {a, b, c, d, f} = 6
+     *   Jaccard = 4/6 = 0.667 — well below, no dedup.
+     *
+     *   {a, b, c, d, e} ∩ {a, b, c, d, e, f} = 5
+     *   {a, b, c, d, e} ∪ {a, b, c, d, e, f} = 6
+     *   Jaccard = 5/6 = 0.833 — above threshold, dedup.
+     */
+
+    it('dedups at Jaccard = 0.80 (exactly at threshold)', () => {
+      const first = repo.create({
+        tenantId: 'tenant_default',
+        type: 'fact',
+        title: 'X',
+        content: 'first',
+        summary: 'first',
+        concepts: ['a', 'b', 'c', 'd', 'e'],
+        files: [],
+        importance: 7,
+        confidence: 0.9,
+        source: 'user_explicit',
+        scopeLevel: 'global',
+        scopes: [],
+        sourceClient: 'opencode',
+        sourceDeviceId: null,
+        sourceSessionId: null
+      });
+
+      const second = repo.createDetailed({
+        tenantId: 'tenant_default',
+        type: 'fact',
+        title: 'X',
+        content: 'second',
+        summary: 'second',
+        concepts: ['a', 'b', 'c', 'd'],
+        files: [],
+        importance: 7,
+        confidence: 0.9,
+        source: 'user_explicit',
+        scopeLevel: 'global',
+        scopes: [],
+        sourceClient: 'opencode',
+        sourceDeviceId: null,
+        sourceSessionId: null
+      });
+
+      expect(second.deduped).toBe(true);
+      expect(second.memory.id).toBe(first.id);
+    });
+
+    it('dedups at Jaccard = 0.833 (well above threshold)', () => {
+      const first = repo.create({
+        tenantId: 'tenant_default',
+        type: 'fact',
+        title: 'X',
+        content: 'first',
+        summary: 'first',
+        concepts: ['a', 'b', 'c', 'd', 'e'],
+        files: [],
+        importance: 7,
+        confidence: 0.9,
+        source: 'user_explicit',
+        scopeLevel: 'global',
+        scopes: [],
+        sourceClient: 'opencode',
+        sourceDeviceId: null,
+        sourceSessionId: null
+      });
+
+      const second = repo.createDetailed({
+        tenantId: 'tenant_default',
+        type: 'fact',
+        title: 'X',
+        content: 'second',
+        summary: 'second',
+        concepts: ['a', 'b', 'c', 'd', 'e', 'f'],
+        files: [],
+        importance: 7,
+        confidence: 0.9,
+        source: 'user_explicit',
+        scopeLevel: 'global',
+        scopes: [],
+        sourceClient: 'opencode',
+        sourceDeviceId: null,
+        sourceSessionId: null
+      });
+
+      expect(second.deduped).toBe(true);
+      expect(second.memory.id).toBe(first.id);
+    });
+
+    it('does NOT dedup at Jaccard = 0.667 (well below threshold)', () => {
+      const first = repo.create({
+        tenantId: 'tenant_default',
+        type: 'fact',
+        title: 'X',
+        content: 'first',
+        summary: 'first',
+        concepts: ['a', 'b', 'c', 'd', 'e'],
+        files: [],
+        importance: 7,
+        confidence: 0.9,
+        source: 'user_explicit',
+        scopeLevel: 'global',
+        scopes: [],
+        sourceClient: 'opencode',
+        sourceDeviceId: null,
+        sourceSessionId: null
+      });
+
+      const second = repo.createDetailed({
+        tenantId: 'tenant_default',
+        type: 'fact',
+        title: 'X',
+        content: 'second',
+        summary: 'second',
+        concepts: ['a', 'b', 'c', 'd', 'f'],
+        files: [],
+        importance: 7,
+        confidence: 0.9,
+        source: 'user_explicit',
+        scopeLevel: 'global',
+        scopes: [],
+        sourceClient: 'opencode',
+        sourceDeviceId: null,
+        sourceSessionId: null
+      });
+
+      expect(second.deduped).toBe(false);
+      expect(second.memory.id).not.toBe(first.id);
+    });
+  });
 });

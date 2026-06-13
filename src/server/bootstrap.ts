@@ -1,6 +1,7 @@
 import { expandPath, loadConfig } from '../core/config.js';
 import { createHttpServer } from './http.js';
 import { startConsolidationScheduler } from './scheduler.js';
+import { logger } from './logger.js';
 
 const configPath = process.env.MEMWEAVE_CONFIG;
 const config = loadConfig(configPath);
@@ -15,8 +16,7 @@ if (process.env.MEMWEAVE_NO_SCHEDULER !== '1') {
     intervalMs: 6 * 60 * 60 * 1000,
     runOnStart: true,
     onRun: (r) => {
-      // eslint-disable-next-line no-console
-      console.log(`[consolidation] ${r.summary} (ts=${r.timestamp})`);
+      logger.info({ event: 'consolidation', ...r }, r.summary);
     }
   });
 
@@ -29,3 +29,4 @@ if (process.env.MEMWEAVE_NO_SCHEDULER !== '1') {
 }
 
 await app.listen({ host: config.server.host, port: config.server.port });
+logger.info({ host: config.server.host, port: config.server.port }, 'memweave server listening');

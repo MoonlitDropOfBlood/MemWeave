@@ -1,5 +1,6 @@
 import type { LlmProvider } from '../providers/llm/index.js';
 import { EDGE_EXTRACT_SYSTEM, buildEdgeExtractPrompt } from '../prompts/edge-extract.js';
+import { logger } from '../server/logger.js';
 
 export interface EdgeCandidate {
   targetMemoryId: string;
@@ -31,7 +32,7 @@ export async function extractEdges(
     const prompt = buildEdgeExtractPrompt(newMemory, existingMemories);
     raw = await provider.call(EDGE_EXTRACT_SYSTEM, prompt);
   } catch (err) {
-    console.warn('[association] Provider call failed:', err);
+    logger.warn({ err }, 'provider call failed');
     return [];
   }
 
@@ -41,7 +42,7 @@ export async function extractEdges(
   try {
     parsed = JSON.parse(raw);
   } catch {
-    console.warn('[association] Failed to parse JSON response');
+    logger.warn('failed to parse JSON response');
     return [];
   }
 
