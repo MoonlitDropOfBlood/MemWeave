@@ -19,7 +19,7 @@ MemWeave is a local service that lets AI Agents **remember you, your projects, a
 - **OpenCode plugin**: zero call cost — relevant memories are appended to the system prompt on every turn / file read.
 - **REST API**: a complete HTTP interface for scripts and third-party tools.
 
-All data lives in a local SQLite file. **No external dependencies** (besides the optional `sqlite-vec` vector extension).
+All data lives in a local SQLite file. **No mandatory external dependencies** (besides two optional components: the `sqlite-vec` vector extension, and `@xenova/transformers` for local embeddings). The system runs end-to-end with neither installed.
 
 ---
 
@@ -241,6 +241,46 @@ Sort order: `tier` (long > medium > short) → `strength × importance`. The ser
 
 ---
 
+## Local embeddings (optional)
+
+MemWeave's vector layer is **fully optional**. Three embedding providers, pick one:
+
+| Provider | Config key | External dep | When to use |
+|---|---|---|---|
+| **`noop`** (default) | `embedding.provider: "noop"` | none | Zero-config startup / no vector layer |
+| **`local-xenova`** | `embedding.provider: "local-xenova"` | `@xenova/transformers` (opt-in install) | Real semantic vectors, no API bill |
+| **`openai-compatible`** | `embedding.provider: "openai-compatible"` | any OpenAI-compatible `/v1/embeddings` endpoint | You already have OpenAI / Voyage / a self-hosted endpoint |
+
+**Enabling `local-xenova`:**
+
+```bash
+npm install @xenova/transformers
+```
+
+`memweave.config.jsonc`:
+
+```jsonc
+{
+  "embedding": {
+    "provider": "local-xenova",
+    "model": "Xenova/nomic-embed-text-v1",
+    "dimensions": 768
+  }
+}
+```
+
+**Key behaviors:**
+
+- The first `embed()` call dynamically loads the model and pulls weights from the Hugging Face Hub (~30MB), then caches them under `node_modules/@xenova/transformers/.cache/`.
+- Subsequent calls **reuse** the loaded pipeline (concurrent callers share the same load).
+- **Automatic degradation**: if `@xenova/transformers` is not installed, the model fails to load, or inference times out (default 60s), the provider falls back to a SHA-256 hash-based vector and emits a one-time `console.warn`, so the system never breaks.
+- Pass `fallbackOnError: false` to disable the fallback (let errors bubble up for debugging).
+- If the model's output dimension doesn't match the configured `dimensions`, the vector is **truncated or zero-padded** to match (consistent with the graceful-degrade style of `vector-search.ts`).
+
+See [`src/providers/embedding/local-xenova.ts`](./src/providers/embedding/local-xenova.ts) and [`src/types/xenova.d.ts`](./src/types/xenova.d.ts) for details.
+
+---
+
 ## Web UI tour
 
 Visit `/ui/`. Five top-level pages + memory detail + graph:
@@ -267,7 +307,7 @@ Light / dark theme toggle in the top-right.
 src/
 ├── cli/                 # CLI entry
 ├── commands/            # memweave subcommands
-├── core/                # core (config, logging, embedding client)
+├── core/                # core (config, Zod enums, memory decay model)
 ├── db/                  # SQLite schema + repositories
 │   └── repositories/    # Memory / Session / Edge / Device / Stats / ConsolidationRun
 ├── injection/           # injection packaging (XML / text)
@@ -275,7 +315,9 @@ src/
 │   └── tools/           # 10 MCP tool implementations
 ├── plugin/              # OpenCode plugin (auto-injects memories into the prompt)
 ├── prompts/             # prompt templates (compression / edge extraction / value-gate)
-├── providers/           # Embedding / LLM adapters
+├── providers/           # Embedding (noop/openai/xenova) / LLM (noop/openai) adapters
+│   ├── embedding/       # NoopEmbeddingProvider / OpenaiCompatible / LocalXenova (opt-in dep)
+│   └── llm/             # NoopLlmProvider / OpenaiLlmProvider
 ├── rest/                # HTTP API (Fastify)
 │   └── routes/          # one file per route
 ├── retrieval/           # retrieval engine
@@ -335,7 +377,11 @@ npm run build      # succeeds
 A: A SQLite file. See `storage.path` in `memweave.config.jsonc`; defaults to `<dataDir>/memweave.db`.
 
 **Q: Can it run without an external LLM / Embedding service?**
-A: Yes. Set `embedding.dimensions` to `0` to disable the vector layer; retrieval falls back to BM25 + graph + causal.
+A: Yes. Three fallback paths, in order of cost:
+
+1. **Fully local + hash vectors** — `embedding.provider: "noop"` (default). No external service. When `embedding.dimensions: 0` the server skips the vector layer entirely; retrieval falls back to BM25 + graph + causal.
+2. **Fully local + real embeddings** — `embedding.provider: "local-xenova"` + `npm install @xenova/transformers`. On the first call, the model weights (~30MB) are pulled from the Hugging Face Hub and cached under `node_modules/@xenova/transformers/.cache/`. If the package is missing or model loading fails, the provider **automatically degrades** to hash-based vectors and emits a one-time `console.warn`.
+3. **External API** — `embedding.provider: "openai-compatible"`, against any OpenAI-compatible `/v1/embeddings` endpoint.
 
 **Q: Port already in use?**
 A: Change `server.port` in `memweave.config.jsonc`.
@@ -350,7 +396,8 @@ A: The server can't find `dist/web/`. Run `npm run web:build`.
 
 ## Roadmap
 
-- [ ] Multi-provider embedding adapters (OpenAI / Voyage / local ONNX)
+- [x] **Local ONNX embeddings** — implemented `LocalXenovaEmbeddingProvider` (built on `@xenova/transformers`, dynamic import + automatic noop fallback)
+- [ ] Multi-provider embedding adapters (OpenAI / Voyage / more local models)
 - [ ] Federation / sync protocol (device-to-device E2E-encrypted sync)
 - [ ] Automatic knowledge-graph extraction
 - [ ] "Right to be forgotten" (GDPR compliance)

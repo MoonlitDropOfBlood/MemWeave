@@ -22,6 +22,7 @@ memweave/
 │   ├── mcp/tools/      # 10 MCP tools via stdio
 │   ├── plugin/         # OpenCode plugin (auto-injects memory into prompts)
 │   ├── providers/      # Embedding (openai/xenova/noop) + LLM (openai/noop)
+│   ├── types/          # Ambient .d.ts for optional deps (xenova)
 │   ├── prompts/        # Prompt templates (compression, edge-extract, value-gate)
 │   ├── workers/        # Consolidation pipeline (6 files)
 │   └── server/         # HTTP bootstrap + scheduler + auth

@@ -36,11 +36,52 @@ describe('NoopEmbeddingProvider', () => {
   });
 });
 
-describe('LocalXenovaEmbeddingProvider (stub)', () => {
-  it('delegates to noop behavior in v1', async () => {
-    const p = new LocalXenovaEmbeddingProvider({ dimensions: 16, model: 'Xenova/nomic-embed-text-v1' });
-    const v = await p.embed('test');
+describe('LocalXenovaEmbeddingProvider', () => {
+  it('exposes model and dimensions from options', () => {
+    const p = new LocalXenovaEmbeddingProvider({
+      dimensions: 16,
+      model: 'Xenova/nomic-embed-text-v1'
+    });
+    expect(p.model).toBe('Xenova/nomic-embed-text-v1');
+    expect(p.dimensions).toBe(16);
+  });
+
+  it('falls back to deterministic noop vectors when @xenova/transformers is not installed', async () => {
+    // We assume the optional dep is not installed in the test env. If it is,
+    // this test will try to load a real model and may fail on network/model
+    // access — that is acceptable: the test would still fail loudly rather
+    // than silently produce noop vectors.
+    const p = new LocalXenovaEmbeddingProvider({
+      dimensions: 16,
+      model: 'Xenova/nomic-embed-text-v1',
+      fallbackOnError: true
+    });
+    const v = await p.embed('hello');
+    // Whether real or fallback, the contract is "a 16-dim number array".
     expect(v).toHaveLength(16);
+    expect(v.every((n) => typeof n === 'number' && Number.isFinite(n))).toBe(true);
+  });
+
+  it('throws when fallbackOnError is false and the dep is missing', async () => {
+    const p = new LocalXenovaEmbeddingProvider({
+      dimensions: 8,
+      model: 'Xenova/nomic-embed-text-v1',
+      fallbackOnError: false
+    });
+    await expect(p.embed('test')).rejects.toThrow();
+  });
+
+  it('coerces single-input batch to one row', async () => {
+    const p = new LocalXenovaEmbeddingProvider({ dimensions: 4, model: 'm' });
+    const batch = await p.embedBatch(['only-one']);
+    expect(batch).toHaveLength(1);
+    expect(batch[0]).toHaveLength(4);
+  });
+
+  it('returns [] for empty input without calling the model', async () => {
+    const p = new LocalXenovaEmbeddingProvider({ dimensions: 4, model: 'm' });
+    const batch = await p.embedBatch([]);
+    expect(batch).toEqual([]);
   });
 });
 

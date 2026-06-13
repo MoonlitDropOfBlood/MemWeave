@@ -11,13 +11,13 @@ Puggable providers. The default install ships `noop` adapters so the server boot
 ```
 src/providers/
 ├── embedding/
-│   ├── index.ts                  # resolveEmbeddingProvider(config) factory
-│   ├── noop.ts                   # Returns []; triggers BM25-only retrieval
+│   ├── index.ts                  # createEmbeddingProvider(options) factory
+│   ├── noop.ts                   # Deterministic SHA-256-derived vectors
 │   ├── openai-compatible.ts      # /v1/embeddings against any OpenAI-compatible API
-│   └── local-xenova.ts           # @xenova/transformers in-process
+│   └── local-xenova.ts           # @xenova/transformers (optional dep, lazy-loaded)
 └── llm/
-    ├── index.ts                  # resolveLlmProvider(config) factory
-    ├── noop.ts                   # Pure rule-based consolidation
+    ├── index.ts                  # createLlmProvider(options) factory
+    ├── noop.ts                   # Returns ''; pure rule-based consolidation
     └── openai.ts                 # Chat Completions client
 ```
 
@@ -25,14 +25,15 @@ src/providers/
 
 | Symbol | File | Role |
 |---|---|---|
-| `resolveEmbeddingProvider(config)` | `embedding/index.ts` | Reads `embedding.provider`; returns `{ embed(texts): Promise<number[][]>, dimensions: number }` |
-| `resolveLlmProvider(config)` | `llm/index.ts` | Reads `llm.provider`; returns `{ chat(messages): Promise<string>, complete(prompt): Promise<string> }` |
+| `createEmbeddingProvider(options)` | `embedding/index.ts` | `options.kind` selects provider; returns `{ embed, embedBatch, dimensions, model }` |
+| `createLlmProvider(options)` | `llm/index.ts` | `options.kind` selects provider; returns `{ call(systemPrompt, userPrompt): Promise<string> }` |
 
 ## CONVENTIONS
 
-- Each provider exports a single function returning an object with the contract methods — no classes.
+- Each provider exports a class implementing the `EmbeddingProvider` / `LlmProvider` interface.
 - `noop` is the **default** for both. If a user ships `embedding.dimensions: 0`, the server skips the vector layer entirely (BM25 + graph + causal only).
 - Provider modules never read `process.env` directly; they accept config from `loadConfig()`.
+- `local-xenova` is **optional**: the `@xenova/transformers` package is dynamically imported on first use. If absent, the provider falls back to a deterministic hash-based vector and logs a one-time `console.warn`.
 
 ## ANTI-PATTERNS
 
