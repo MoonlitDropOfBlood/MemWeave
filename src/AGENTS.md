@@ -19,7 +19,7 @@ src/
 ├── injection/          # XML/text bundler (token-budgeted)
 ├── rest/routes/        # 8 Fastify routes under /api/v1/*
 ├── mcp/tools/          # 10 MCP tools via stdio
-├── plugin/             # OpenCode plugin (auto-inject)
+├── plugin/             # OpenCode 插件 (config 钩子注册 MCP server + system-prompt 注入)
 ├── providers/          # Embedding (openai/xenova/noop) + LLM (openai/noop)
 ├── prompts/            # Compression / edge-extract / value-gate templates
 ├── workers/            # Consolidation pipeline (6 files)

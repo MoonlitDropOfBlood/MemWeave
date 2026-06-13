@@ -241,6 +241,64 @@ npm run cli -- <command>
 
 ---
 
+## 渐进披露（Progressive Disclosure）
+
+MemWeave 的检索结果包含**完整的记忆正文**（`content` 字段），但**默认注入给 LLM 的只包含摘要**（`title` + `summary`）。这是设计文档 §5.5 明确要求的"渐进披露"原则 —— 在 LLM 上下文窗口有限的前提下，先给最关键的"线索"，让 Agent 主动调用 `memory_expand(memoryId)` 拉取完整细节。
+
+### 三层消费粒度
+
+| 粒度 | 包含 | 何时返回 | Token 开销 |
+|---|---|---|---|
+| **Compact（默认）** | `id` / `type` / `tier` / `title` / `summary` | `POST /api/v1/inject`（所有 4 个阶段）、`POST /api/v1/memories/search`（`mode: "compact"`） | 低 |
+| **Full record** | 上述 + `content` / `concepts` / `files` / `importance` / `confidence` / `strength` / `scopes` 等 | `GET /api/v1/memories/:id` / `MCP memory_expand` | 中-高 |
+| **Plus neighbors** | 上述 + 关联边、相邻会话、因果链 | `MCP memory_expand`（默认带相关边） / `MCP memory_graph_query` | 高 |
+
+### 注入的 XML 长这样
+
+服务端（`src/injection/formatter.ts` 和 `src/plugin/injector.ts`）渲染的 `<memory>` 块**只**包含 `<title>` + `<summary>`，永远不包含 `<content>`：
+
+```xml
+<memory-context phase="session_start" count="12">
+  <memory id="m_abc" type="fact" tier="long" strength="0.92" importance="8">
+    <title>User prefers strict TypeScript</title>
+    <summary>Always use noImplicitAny, exactOptionalPropertyTypes.</summary>
+  </memory>
+  ...
+</memory-context>
+```
+
+LLM 看到这个 block 后，如果需要更多细节（例如「这条偏好具体怎么落地？」），它会**主动**调用 `memory_expand({ memoryId: "m_abc" })` 拿到完整 `content` 字段和相关边。
+
+### 搜索也支持 compact / full
+
+`POST /api/v1/memories/search` 多了一个 `mode` 参数（`"compact"` | `"full"`）。默认 `compact`：
+
+- `mode: "compact"`（默认，MCP `memory_smart_search` 使用）— 返回 `id` / `type` / `tier` / `title` / `summary` / `finalScore` / `sources`
+- `mode: "full"` — 还包含 `content` / `concepts` / `files` / `importance` / `confidence` / `strength` / `scopes` 等
+
+服务端**默认**走 `compact`，确保列表渲染、批量预览等场景不会因为 `content` 字段过大而撑爆响应体。
+
+### 排序与 token 预算
+
+compact 模式下，注入的排序规则：**tier**（`long` > `medium` > `short`）→ **`strength × importance`**。服务端按 `phase` 设定的 token 预算裁剪（`session_start: 1200` / 其他阶段: 800），保证 LLM 永远只看到预算内最相关的那一批。
+
+> **设计要点**：渐进披露不是"分阶段给不同详略程度"，而是"**始终摘要、主动拉取才给全文**"。所有注入阶段（`session_start` / `prompt_delta` / `file_pack` / `failure_delta`）渲染的 XML 是**同一种**摘要粒度；区别只在于"哪一批记忆"和"多少条"。LLM 想要细节，就调 `memory_expand`。
+
+### 闭环机制
+
+LLM 调 `memory_expand` 真的能拿到全文吗？**在 OpenCode 里能** —— OpenCode 插件（`src/plugin/index.ts`）用 **`config` 钩子**把 MemWeave 自带的 MCP server（`src/mcp/index.ts`，10 个工具）注册进 OpenCode，OpenCode 启动时自动连接，LLM 立刻就能看到 `memory_save` / `memory_recall` / `memory_smart_search` / `memory_expand` / `memory_graph_query` / `memory_file_history` 等工具。
+
+具体步骤：
+
+1. 插件加载 → `config` 钩子跑，向 OpenCode 注册 `mcp["memweave"]` = `npx tsx <repo>/src/mcp/index.ts`
+2. OpenCode 自动连上 MCP server，把 10 个 `memory_*` 工具加进 LLM 的工具列表
+3. LLM 启动 → `experimental.chat.system.transform` 触发 → 注入摘要式 XML
+4. LLM 看到 `m_abc` 这条相关 → 调 `memory_expand({ memoryId: "m_abc" })` → MCP server 调 REST `/api/v1/memories/:id` → LLM 拿到完整 `content`
+
+OpenCode 之外（Claude Desktop / Cursor 等）调 `memweave-mcp` bin 也走完全一样的链路，闭环行为一致。
+
+---
+
 ## 本地 Embedding（可选）
 
 MemWeave 的向量层是**完全可选**的。三种 embedding provider 选其一：

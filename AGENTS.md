@@ -64,7 +64,7 @@ memweave/
 | `fuseResults()` | `src/retrieval/fusion.ts` | RRF (Reciprocal Rank Fusion) |
 | `createHttpServer()` | `src/server/http.ts` | Fastify app factory |
 | `startConsolidationScheduler()` | `src/server/scheduler.ts` | 6h interval, runs on start |
-| `MemweaveInjectPlugin` | `src/plugin/index.ts` | OpenCode hook for auto-injection |
+| `MemweaveInjectPlugin` | `src/plugin/index.ts` | OpenCode 插件：`config` 钩子把 MemWeave MCP server 注册进 OpenCode（**渐进披露闭环**），`system.transform` 注入摘要式 XML |
 | `buildBundle()` | `src/injection/bundler.ts` | Token-budgeted XML packager |
 | `runCommand()` | `src/commands/index.ts` | CLI dispatch |
 

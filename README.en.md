@@ -241,6 +241,64 @@ Sort order: `tier` (long > medium > short) → `strength × importance`. The ser
 
 ---
 
+## Progressive disclosure
+
+MemWeave's search results include the **full memory body** (`content` field), but what gets **injected into the LLM by default contains only summaries** (`title` + `summary`). This is the "progressive disclosure" principle explicitly required by design spec §5.5 — given the LLM's limited context window, hand it the most important "hooks" first, and let the agent *proactively* call `memory_expand(memoryId)` to pull full details.
+
+### Three consumption granularities
+
+| Granularity | Includes | Returned by | Token cost |
+|---|---|---|---|
+| **Compact (default)** | `id` / `type` / `tier` / `title` / `summary` | `POST /api/v1/inject` (all 4 phases), `POST /api/v1/memories/search` (`mode: "compact"`) | Low |
+| **Full record** | Above + `content` / `concepts` / `files` / `importance` / `confidence` / `strength` / `scopes` etc. | `GET /api/v1/memories/:id` / `MCP memory_expand` | Medium-high |
+| **Plus neighbors** | Above + related edges, adjacent sessions, causal chains | `MCP memory_expand` (default returns related edges) / `MCP memory_graph_query` | High |
+
+### What the injected XML looks like
+
+The server (in `src/injection/formatter.ts` and `src/plugin/injector.ts`) renders each `<memory>` block with `<title>` + `<summary>` only — **never** with `<content>`:
+
+```xml
+<memory-context phase="session_start" count="12">
+  <memory id="m_abc" type="fact" tier="long" strength="0.92" importance="8">
+    <title>User prefers strict TypeScript</title>
+    <summary>Always use noImplicitAny, exactOptionalPropertyTypes.</summary>
+  </memory>
+  ...
+</memory-context>
+```
+
+When the LLM sees this block and needs more detail (e.g., "how exactly does this preference land in the codebase?"), it **proactively** calls `memory_expand({ memoryId: "m_abc" })` to get the full `content` field and related edges.
+
+### Search also supports compact / full
+
+`POST /api/v1/memories/search` takes a `mode` parameter (`"compact"` | `"full"`). Default is `compact`:
+
+- `mode: "compact"` (default; used by MCP `memory_smart_search`) — returns `id` / `type` / `tier` / `title` / `summary` / `finalScore` / `sources`
+- `mode: "full"` — also includes `content` / `concepts` / `files` / `importance` / `confidence` / `strength` / `scopes` etc.
+
+The server **defaults to `compact`** so list rendering and bulk-preview endpoints don't blow up the response body with large `content` fields.
+
+### Sort order and token budget
+
+In compact mode, the injection sort order is: **tier** (`long` > `medium` > `short`) → **`strength × importance`**. The server trims to the per-phase token budget (`session_start: 1200` / other phases: `800`), so the LLM only ever sees the top-K most relevant memories within budget.
+
+> **Design note**: progressive disclosure is not "vary detail by phase" — it's "**always summary, fetch full text on demand**". All injection phases (`session_start` / `prompt_delta` / `file_pack` / `failure_delta`) render XML at the **same** summary granularity; they differ only in *which* memories and *how many*. When the LLM wants detail, it calls `memory_expand`.
+
+### How the loop actually closes
+
+Can the LLM *really* call `memory_expand` and get the full body? **In OpenCode, yes** — the OpenCode plugin (`src/plugin/index.ts`) uses the **`config` hook** to register the bundled MemWeave MCP server (`src/mcp/index.ts`, 10 tools) with OpenCode at plugin-load time. OpenCode auto-connects, the 10 `memory_*` tools appear in the LLM's tool list, and the LLM can call them like any built-in.
+
+The full round-trip:
+
+1. **Plugin loads** → `config` hook runs → OpenCode registers `mcp["memweave"]` = `npx tsx <repo>/src/mcp/index.ts`
+2. **OpenCode auto-connects** to the MCP server → the 10 `memory_*` tools become available to the LLM
+3. **LLM starts** → `experimental.chat.system.transform` fires → summary-only `<memory-context>` XML is appended to the system prompt
+4. **LLM sees `m_abc` is relevant** → calls `memory_expand({ memoryId: "m_abc" })` → MCP server proxies to REST `/api/v1/memories/:id` → LLM gets the full `content`
+
+Outside OpenCode (Claude Desktop, Cursor, etc.) the same loop is available via the `memweave-mcp` bin — same server, same 10 tools, identical behavior.
+
+---
+
 ## Local embeddings (optional)
 
 MemWeave's vector layer is **fully optional**. Three embedding providers, pick one:
