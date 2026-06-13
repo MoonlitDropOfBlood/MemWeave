@@ -25,52 +25,33 @@ All data lives in a local SQLite file. **No mandatory external dependencies** (b
 
 ## 5-minute quickstart
 
-### Option A — from npm (recommended for users)
-
-MemWeave ships as three independent npm packages under the `mem-weave` scope:
-
-| Package | Purpose | What you get |
-|---|---|---|
-| [`@mem-weave/server`](https://www.npmjs.com/package/@mem-weave/server) | Fastify + SQLite server + CLI | `memweave` global command |
-| [`@mem-weave/mcp`](https://www.npmjs.com/package/@mem-weave/mcp) | stdio MCP server with 10 `memory_*` tools | `memweave-mcp` global command |
-| [`@mem-weave/opencode-plugin`](https://www.npmjs.com/package/@mem-weave/opencode-plugin) | OpenCode plugin — auto-injection + auto MCP registration | Loaded by OpenCode |
-
-Quick install:
+### Option A — via npx (recommended)
 
 ```bash
-npm install -g @mem-weave/server @mem-weave/mcp
-memweave init                # generates memweave.config.jsonc + data dir
-memweave start               # foreground
+npx @mem-weave/server init     # generate memweave.config.jsonc + data dir
+npx @mem-weave/server start    # foreground server on :3131
 ```
 
-OpenCode users, additionally:
+Open [`http://127.0.0.1:3131/ui/`](http://127.0.0.1:3131/ui/) to see the **Calm Memory Atlas** Web UI.
+
+OpenCode users additionally:
 
 ```bash
 npm install -g @mem-weave/opencode-plugin
 ```
 
-Then add `"@mem-weave/opencode-plugin"` to the `plugin` array in `~/.config/opencode/opencode.json`.
+Then add `"@mem-weave/opencode-plugin"` to the `plugin` array in `~/.config/opencode/opencode.json` — the plugin auto-injects relevant memories into every conversation.
 
-### Option B — from source (for development)
+### Option B — from source (development)
 
 ```bash
 git clone <repo-url> memweave
 cd memweave
 npm install
-npm run dev                  # builds web + starts server on :3131
+npm run dev                   # builds web + starts server on :3131
 ```
 
-### 3. Start the service (Option A)
-
-```bash
-memweave start
-```
-
-The service listens on `http://127.0.0.1:3131` by default.
-
-Open [`http://127.0.0.1:3131/ui/`](http://127.0.0.1:3131/ui/) in your browser to see the **Calm Memory Atlas** Web UI.
-
-### 4. Health check
+### Health check
 
 ```bash
 curl http://127.0.0.1:3131/api/v1/health
