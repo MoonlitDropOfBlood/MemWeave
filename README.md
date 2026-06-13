@@ -1,0 +1,372 @@
+# MemWeave
+
+> 给 AI 智能体（Agent）用的本地优先、可记忆、可推理的记忆与上下文基础设施。
+>
+> **English version:** [README.en.md](./README.en.md)
+
+---
+
+## 它是什么
+
+MemWeave 是一个让 AI Agent **记住你、记住项目、记住历史** 的本地服务。它提供：
+
+- **结构化记忆**：把事实、决策、偏好、事件、经验教训等工作记忆，存进本地 SQLite 数据库。
+- **四层检索**：关键词（BM25）+ 向量语义 + 图谱关系 + 因果链，按需融合。
+- **上下文注入**：把相关的记忆按智能体友好的 XML 格式打包，喂给 LLM。
+- **记忆整理（Consolidation）**：模拟"睡眠"，定期把短期记忆升格为长期、淘汰冷门、发现因果。
+- **Web UI**（Calm Memory Atlas）：在浏览器里浏览、搜索、调试、运维整套记忆系统。
+- **MCP 集成**：通过 Model Context Protocol 直接接入 Claude / Cursor / OpenCode 等 IDE（10 个工具）。
+- **OpenCode 插件**：零调用成本——在每次对话/读文件时自动把相关记忆追加到 system prompt。
+- **REST API**：完整的 HTTP 接口，便于脚本和第三方工具调用。
+
+所有数据存储在本地 SQLite 文件中，**无外部依赖**（除可选的向量搜索扩展 `sqlite-vec`）。
+
+---
+
+## 5 分钟上手
+
+### 1. 安装
+
+```bash
+git clone <repo-url> memweave
+cd memweave
+npm install
+```
+
+### 2. 初始化配置
+
+```bash
+npm run cli -- init
+```
+
+这会在当前目录生成 `memweave.config.jsonc`（含数据目录、端口、租户 API key 等）。
+
+### 3. 启动服务
+
+```bash
+npm run dev
+```
+
+服务默认监听 `http://127.0.0.1:3131`。
+
+打开浏览器访问 [`http://127.0.0.1:3131/ui/`](http://127.0.0.1:3131/ui/) 即可看到 **Calm Memory Atlas** Web UI。
+
+### 4. 健康检查
+
+```bash
+curl http://127.0.0.1:3131/api/v1/health
+# → {"ok":true,"service":"memweave-server"}
+```
+
+---
+
+## 架构一览
+
+```
+┌────────────────────────────────────────────────────────────┐
+│                      Clients                                │
+│   ┌─────────┐  ┌──────────┐  ┌──────────┐  ┌────────────┐  │
+│   │  Web UI │  │   CLI    │  │ MCP/IDE  │  │ OpenCode   │  │
+│   │         │  │          │  │          │  │  Plugin    │  │
+│   └────┬────┘  └─────┬────┘  └─────┬────┘  └─────┬──────┘  │
+└────────┼─────────────┼─────────────┼─────────────┼──────────┘
+         │  HTTP        │  stdio     │  stdio      │  HTTP
+         │              │            │             │  (POST /injection/preview)
+         └──────────────┴─────┬──────┴─────────────┘
+                              ▼
+              ┌────────────────────────────┐
+              │      memweave-server       │
+              │   (Fastify + TypeScript)   │
+              └────────────┬───────────────┘
+                           ▼
+        ┌──────────────────────────────────────┐
+        │  Retrieval Engine (4-layer fusion)   │
+        │  ┌────────┐ ┌────────┐ ┌──────┐ ┌──┐  │
+        │  │  BM25  │ │ Vector │ │Graph │ │Caus│ │
+        │  └────────┘ └────────┘ └──────┘ └──┘  │
+        └────────────────┬─────────────────────┘
+                         ▼
+              ┌─────────────────────┐
+              │  SQLite + sqlite-vec│
+              │  (本地、嵌入式)     │
+              └─────────────────────┘
+                         ▲
+                         │
+              ┌─────────────────────┐
+              │  Consolidation Worker│
+              │  (定期"睡眠"整理)    │
+              └─────────────────────┘
+```
+
+详细的设计文档请参考 [`docs/`](./docs/) 目录。
+
+---
+
+## 核心概念
+
+| 概念 | 说明 |
+|---|---|
+| **Tenant** | 多租户隔离单位（默认 `tenant_default`），每个租户有独立 API key。 |
+| **Memory** | 一条结构化记忆，包含 `type`（fact / decision / preference / event / project_context / lesson / code_pattern / bug / workflow）、`tier`（short / medium / long）、`summary`、`details`、`scopes` 等。 |
+| **Session** | 一次 Agent 会话，关联到一串 Observation。 |
+| **Observation** | 一次用户/工具交互（user / tool / assistant 任一角色）。 |
+| **Edge** | 记忆之间的关系（causal / temporal / entity）。 |
+| **Consolidation Run** | 一次"睡眠"整理的快照：升格、淘汰、发现的因果。 |
+
+---
+
+## CLI 速查
+
+```bash
+npm run cli -- <command>
+```
+
+| 命令 | 说明 |
+|---|---|
+| `init` | 生成默认配置和数据目录 |
+| `start` | 启动服务（前台） |
+| `stop` | 停止后台服务 |
+| `status` | 查看服务状态 |
+| `migrate` | 运行数据库迁移 |
+| `doctor` | 健康自检（数据库 / 配置 / 端口） |
+| `backup` | 备份 SQLite 数据库 |
+| `version` | 打印版本号 |
+| `help` | 显示帮助 |
+
+> **提示**：首次安装后用 `npm run build && npm link` 可以把 `memweave` / `memweave-mcp` 注册为全局命令。
+
+---
+
+## REST API 概览
+
+所有接口前缀 `/api/v1/`，完整 OpenAPI 风格的路由见 `src/rest/routes/`。
+
+| 端点 | 方法 | 用途 |
+|---|---|---|
+| `/health` | GET | 健康检查 |
+| `/memories` | GET / POST | 搜索 + 写入记忆 |
+| `/memories/:id` | GET / PATCH / DELETE | 记忆详情 / 编辑 / 删除 |
+| `/memories/:id/edges` | GET | 记忆的关系图 |
+| `/injection/preview` | POST | 生成注入 bundle（XML） |
+| `/stats` | GET | 仪表盘统计（KPI、分布） |
+| `/sessions` | GET | 会话列表 |
+| `/sessions/:id/observations` | GET | 会话观察日志 |
+| `/consolidation/runs` | GET | "睡眠"整理历史 |
+| `/consolidation/runs/:id` | GET | 整理详情 |
+| `/consolidation/runs/latest` | GET | 最近一次整理 |
+| `/consolidation/run` | POST | 手动触发一次整理 |
+| `/devices` | GET / POST / DELETE | 设备注册与管理 |
+| `/settings` | GET | 查看服务端配置（密钥已脱敏） |
+
+---
+
+## MCP 工具集
+
+通过 `npm run mcp` 启动 MCP Server（stdio 传输），可接入 Claude Desktop / Cursor / OpenCode 等任何支持 MCP 的客户端。
+
+**配置示例**（Claude Desktop 的 `claude_desktop_config.json`）：
+
+```json
+{
+  "mcpServers": {
+    "memweave": {
+      "command": "npx",
+      "args": ["tsx", "src/mcp/index.ts"],
+      "cwd": "/path/to/memweave",
+      "env": { "MEMWEAVE_URL": "http://127.0.0.1:3131" }
+    }
+  }
+}
+```
+
+**已注册的 10 个工具：**
+
+| 工具名 | 说明 |
+|---|---|
+| `memory_save` | 把洞见、决策、事实写入长期记忆；可指定 type、title、concepts、files、scopes、importance |
+| `memory_recall` | 用关键词搜索过去的观察和记忆 |
+| `memory_smart_search` | 智能搜索：关键词 + 向量 + 图 + 因果 四层融合 |
+| `memory_expand` | 展开单条记忆：拉取相邻关系、相关 sessions、因果链 |
+| `memory_graph_query` | 围绕某个锚点跑图查询（BFS / 因果 / 实体） |
+| `memory_file_history` | 查询某文件路径相关的所有记忆和观察 |
+| `memory_sessions` | 列出最近的会话，附观察数与时间范围 |
+| `memory_patterns` | 在记忆库中发现反复出现的模式（高频 n-gram、概念聚类） |
+| `memory_consolidate` | 手动触发一次"睡眠"整理 |
+| `memory_forget` | 软删除某条记忆（设置 `deleted_at`） |
+
+所有工具通过 `MemweaveClient` 调服务端 REST API。可通过环境变量 `MEMWEAVE_URL` 切换服务端地址（默认 `http://127.0.0.1:3131`）。
+
+---
+
+## OpenCode 插件（自动注入）
+
+`src/plugin/` 提供了一个 OpenCode 插件 `MemweaveInjectPlugin`，能在 Agent 与 LLM 交互时**自动注入相关记忆**，无需 LLM 主动调用工具。
+
+**启用方式**（`~/.config/opencode/opencode.json`）：
+
+```json
+{
+  "plugins": ["/path/to/memweave/src/plugin/index.ts"]
+}
+```
+
+**它做了什么：**
+
+1. **会话开始时** — 钩 `experimental.chat.system.transform`，请求服务端生成 `session_start` 阶段的上下文包（基于当前会话 ID、用户身份、租户），追加到 system prompt 末尾。
+2. **每次新提示后** — 改 phase 为 `prompt_delta`，只追加增量记忆，避免重复。
+3. **读文件类工具调用时**（`Read` / `Edit` / `Write` / `Glob` / `Grep`）— 钩 `tool.execute.before`，从参数中抽取文件路径，请求 `file_pack` 阶段的相关记忆。
+
+**注入格式**：服务端返回的 `contextXml` 形如：
+
+```xml
+<memory-context phase="session_start" count="12">
+  <memory id="m_abc" type="fact" tier="long" strength="0.92" importance="8">
+    <title>User prefers strict TypeScript</title>
+    <summary>Always use noImplicitAny, exactOptionalPropertyTypes.</summary>
+  </memory>
+  ...
+</memory-context>
+```
+
+排序规则：`tier`（long > medium > short）→ `strength × importance`。服务端的 `injection/` 模块负责查询、剪裁、token 预算控制。
+
+**配置：**
+
+| 环境变量 | 默认值 | 含义 |
+|---|---|---|
+| `MEMWEAVE_URL` | `http://127.0.0.1:3131` | 服务端地址 |
+| `MEMWEAVE_PLUGIN_TIMEOUT` | `10000`（ms，硬编码） | 单次注入请求超时 |
+
+> 注意：插件对**服务端不可用**是**静默容错**的（catch 住异常不抛），不会打断 Agent 主流程。
+
+---
+
+## Web UI 页面导览
+
+访问 `/ui/`，共 5 个一级页面 + 记忆详情 + 图谱：
+
+| 路由 | 名称 | 作用 |
+|---|---|---|
+| `/ui/` | **Atlas** | 仪表盘：KPI 卡片、tier/type 分布、活跃项目、最近整理 |
+| `/ui/memories` | **Memories** | 三栏：过滤栏 + 列表 + 详情（搜索、类型筛选、强度排序） |
+| `/ui/injection` | **Injection** | 表单预览注入包（按 token 预算裁剪） |
+| `/ui/sleep` | **Sleep** | 整理运行历史 + 升格/淘汰的 git-diff 视图 |
+| `/ui/settings` | **Settings** | 服务端配置查看、设备列表、API key 显隐 |
+| `/ui/memories/:id` | **Memory Detail** | 记忆详情（正文 / 关系图 / 访问日志） |
+| `/ui/graph/:id` | **Graph** | 关系图谱（径向布局） |
+
+主题支持浅色 / 深色切换（右上角）。
+
+---
+
+## 开发
+
+### 目录结构
+
+```
+src/
+├── cli/                 # CLI 入口
+├── commands/            # memweave 子命令
+├── core/                # 核心（配置、日志、Embedding 客户端）
+├── db/                  # SQLite schema + 仓储
+│   └── repositories/    # Memory / Session / Edge / Device / Stats / ConsolidationRun
+├── injection/           # 注入打包（XML / 文本）
+├── mcp/                 # Model Context Protocol 工具
+│   └── tools/           # 10 个 MCP 工具实现
+├── plugin/              # OpenCode 插件（自动注入记忆到 prompt）
+├── prompts/             # 提示词模板（压缩 / 边抽取 / 价值守门）
+├── providers/           # Embedding / LLM 适配器
+├── rest/                # HTTP API（Fastify）
+│   └── routes/          # 一个个路由文件
+├── retrieval/           # 检索引擎
+│   ├── bm25-search.ts
+│   ├── vector-search.ts
+│   ├── graph-traversal.ts
+│   ├── causal-chain.ts
+│   ├── fusion.ts
+│   └── search-engine.ts
+├── server/              # HTTP 服务 + 调度器
+└── workers/             # Consolidation 后台任务
+
+web/                     # React 18 + Vite 前端
+├── src/
+│   ├── pages/           # 7 个页面
+│   ├── components/      # AppShell + 通用组件
+│   ├── api/             # 类型化 fetch 封装
+│   ├── lib/             # 格式化 / 工具
+│   └── theme/           # CSS 变量（设计令牌）
+├── tests/               # vitest + happy-dom
+└── vite.config.ts
+
+docs/                    # 设计文档
+tests/                   # 服务端 vitest 单元测试
+```
+
+### 常用脚本
+
+| 命令 | 说明 |
+|---|---|
+| `npm test` | 运行服务端全部 Vitest 测试 |
+| `npm run typecheck` | TypeScript 类型检查（服务端） |
+| `npm run build` | 构建前端 + 服务端（含 tsc） |
+| `npm run dev` | 构建前端 + 启动服务端（前台） |
+| `npm run web:dev` | 前端 Vite 开发服务器（HMR，端口 5173） |
+| `npm run web:build` | 构建前端到 `dist/web/` |
+| `npm run cli` | 跑 CLI |
+| `npm run mcp` | 跑 MCP Server |
+
+> 前端单元测试在 `web/` 目录下：`cd web && npm test`。
+
+### 质量门槛
+
+修改后请确认：
+
+```bash
+npm test           # 全部通过
+npm run typecheck  # 0 错误
+npm run build      # 成功
+```
+
+---
+
+## 常见问题
+
+**Q: 数据存在哪？**
+A: SQLite 文件，路径见 `memweave.config.jsonc` 的 `storage.path`，默认 `<dataDir>/memweave.db`。
+
+**Q: 没有外部 LLM / Embedding 服务可以吗？**
+A: 可以。`embedding.dimensions` 设为 0 即禁用向量层，检索会回落到 BM25 + 图 + 因果。
+
+**Q: 端口被占用？**
+A: 修改 `memweave.config.jsonc` 中的 `server.port` 字段。
+
+**Q: 怎么清理全部数据？**
+A: 停止服务 → 删除 `dataDir` 指向的目录 → 重新 `init`。
+
+**Q: Web UI 访问 503？**
+A: 服务端没找到 `dist/web/`，运行 `npm run web:build` 即可。
+
+---
+
+## 路线图
+
+- [ ] 多 Embedding provider 适配（OpenAI / Voyage / 本地 ONNX）
+- [ ] 联邦/同步协议（device-to-device 端到端加密同步）
+- [ ] 知识图谱自动抽取
+- [ ] 记忆"遗忘权"（GDPR 合规）
+
+---
+
+## 许可证
+
+本仓库暂未声明开源许可证，使用前请联系作者。
+
+---
+
+## 致谢
+
+- [Fastify](https://fastify.io/) — 高性能 HTTP 服务
+- [better-sqlite3](https://github.com/WiseLibs/better-sqlite3) — 同步 SQLite 客户端
+- [sqlite-vec](https://github.com/asg017/sqlite-vec) — 嵌入式向量搜索
+- [Model Context Protocol](https://modelcontextprotocol.io/) — Agent 工具调用标准
+- [Vite](https://vitejs.dev/) + [React](https://react.dev/) — 前端

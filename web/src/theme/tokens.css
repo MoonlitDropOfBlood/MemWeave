@@ -1,0 +1,82 @@
+:root {
+  /* Light theme — warm paper */
+  --bg: #F7F4EE;
+  --surface: #FFFFFF;
+  --surface-soft: #F0ECE3;
+  --border: #DDD5C7;
+  --text: #26231F;
+  --text-muted: #7A7266;
+
+  --accent: #3B7C6E;
+  --accent-soft: #DDEDE8;
+  --warning: #C98A2E;
+  --danger: #B85C5C;
+  --success: #5B8A5A;
+  --link: #466FA6;
+
+  /* Type-tier colors */
+  --tier-short: #B5A99A;
+  --tier-medium: #8FAEB8;
+  --tier-long: #3B7C6E;
+
+  /* Type colors (subtle) */
+  --type-fact: #466FA6;
+  --type-decision: #3B7C6E;
+  --type-preference: #C98A2E;
+  --type-event: #7A7266;
+  --type-project_context: #5B8A5A;
+  --type-lesson: #B85C5C;
+  --type-code_pattern: #6F5FA8;
+  --type-bug: #B85C5C;
+  --type-workflow: #466FA6;
+
+  /* Edge colors (design §10.6) */
+  --edge-causes: #C98A2E;
+  --edge-enables: #5B8A5A;
+  --edge-contradicts: #C98A2E;
+  --edge-supersedes: #466FA6;
+  --edge-references: #7A7266;
+  --edge-related_to: #B5A99A;
+  --edge-before: #6F5FA8;
+  --edge-after: #6F5FA8;
+  --edge-duplicates: #B5A99A;
+  --edge-refines: #3B7C6E;
+
+  /* Typography */
+  --font-display: 'Fraunces', Georgia, serif;
+  --font-body: 'IBM Plex Sans', system-ui, -apple-system, sans-serif;
+  --font-mono: 'JetBrains Mono', Menlo, Consolas, monospace;
+
+  /* Spacing */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-12: 48px;
+
+  --radius-sm: 4px;
+  --radius: 6px;
+  --radius-lg: 12px;
+}
+
+[data-theme="dark"] {
+  --bg: #171A18;
+  --surface: #20241F;
+  --surface-soft: #2A3029;
+  --border: #3A4238;
+  --text: #ECE7DD;
+  --text-muted: #A8A095;
+
+  --accent: #6AB7A5;
+  --accent-soft: #183C35;
+  --warning: #D9A441;
+  --danger: #D27A7A;
+  --success: #8FBF87;
+  --link: #8CABD9;
+
+  --tier-short: #5C564D;
+  --tier-medium: #4F6970;
+  --tier-long: #6AB7A5;
+}

@@ -1,0 +1,155 @@
+.page {
+  display: grid;
+  grid-template-columns: 220px 1fr;
+  gap: var(--space-4);
+  height: 100%;
+  margin: calc(-1 * var(--space-6));
+}
+
+.controls {
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+  padding: var(--space-4);
+  overflow-y: auto;
+}
+
+.controlsTitle {
+  font-size: 12px;
+  font-family: var(--font-mono);
+  text-transform: uppercase;
+  color: var(--text-muted);
+  letter-spacing: 0.05em;
+  margin: 0 0 var(--space-4);
+}
+
+.field {
+  margin-bottom: var(--space-4);
+}
+
+.field > span {
+  display: block;
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-bottom: var(--space-1);
+}
+
+.field input[type="range"] {
+  width: 100%;
+}
+
+.field select {
+  width: 100%;
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  color: var(--text);
+  font-size: 13px;
+}
+
+.controlVal {
+  text-align: right;
+  font-family: var(--font-mono);
+  color: var(--text);
+  font-size: 12px;
+}
+
+.edgeTypeList {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.edgeType {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.edgeType span {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  padding: 1px 6px;
+  border: 1px solid;
+  border-radius: 999px;
+  background: transparent;
+  color: inherit;
+}
+
+.canvas {
+  background: var(--bg);
+  position: relative;
+  overflow: auto;
+  padding: var(--space-4);
+}
+
+.loading,
+.error,
+.empty {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+}
+
+.error { color: var(--danger); }
+
+.graphWrap {
+  position: relative;
+  width: 600px;
+  height: 600px;
+  margin: 40px auto;
+}
+
+.node {
+  position: absolute;
+  width: 140px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: var(--space-2);
+  transform: translate(-50%, -50%);
+  text-align: center;
+}
+
+.nodeCenter {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  width: 160px;
+  font-weight: 600;
+}
+
+.nodeBadges {
+  display: flex;
+  justify-content: center;
+  gap: var(--space-1);
+  margin-bottom: var(--space-1);
+  flex-wrap: wrap;
+}
+
+.nodeTitle {
+  font-size: 12px;
+  color: var(--text);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.edges {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+.edge {
+  stroke-width: 0.3;
+  opacity: 0.6;
+  vector-effect: non-scaling-stroke;
+}
