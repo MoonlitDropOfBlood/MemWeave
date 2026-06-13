@@ -3,10 +3,10 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { FastifyInstance } from 'fastify';
-import { openDatabase } from '../../src/db/database.js';
-import { createHttpServer } from '../../src/server/http.js';
-import { extractBearerToken, hashApiKey, registerAuthMiddleware } from '../../src/server/auth.js';
-import { DeviceRepo } from '../../src/db/repositories/device-repo.js';
+import { openDatabase } from '../../packages/server/src/db/database.js';
+import { createHttpServer } from '../../packages/server/src/server/http.js';
+import { extractBearerToken, hashApiKey, registerAuthMiddleware } from '../../packages/server/src/server/auth.js';
+import { DeviceRepo } from '../../packages/server/src/db/repositories/device-repo.js';
 
 let app: FastifyInstance;
 let dbPath: string;

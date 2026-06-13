@@ -2,10 +2,10 @@ import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { openDatabase } from '../../src/db/database.js';
-import { VectorRepo } from '../../src/db/repositories/vector-repo.js';
-import { MemoryRepo } from '../../src/db/repositories/memory-repo.js';
-import { vectorSearch, similarityFromL2 } from '../../src/retrieval/vector-search.js';
+import { openDatabase } from '../../packages/server/src/db/database.js';
+import { VectorRepo } from '../../packages/server/src/db/repositories/vector-repo.js';
+import { MemoryRepo } from '../../packages/server/src/db/repositories/memory-repo.js';
+import { vectorSearch, similarityFromL2 } from '../../packages/server/src/retrieval/vector-search.js';
 
 let db: ReturnType<typeof openDatabase>;
 const DIM = 4;

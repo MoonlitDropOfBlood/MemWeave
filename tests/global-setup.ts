@@ -63,7 +63,7 @@ export async function setup(): Promise<void> {
 
   serverProcess = spawn(
     process.execPath,
-    ['--import', 'tsx', 'src/server/bootstrap.ts'],
+    ['--import', 'tsx', 'packages/server/src/server/bootstrap.ts'],
     {
       cwd: process.cwd(),
       env,

@@ -4,7 +4,7 @@ import {
   NoopEmbeddingProvider,
   OpenaiCompatibleEmbeddingProvider,
   LocalXenovaEmbeddingProvider
-} from '../../src/providers/embedding/index.js';
+} from '../../packages/server/src/providers/embedding/index.js';
 
 describe('NoopEmbeddingProvider', () => {
   it('returns a vector of requested dimensions', async () => {

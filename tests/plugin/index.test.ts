@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { resolve } from 'node:path';
-import { resolveMcpServerCommand, MemweaveInjectPlugin } from '../../src/plugin/index.js';
+import { resolveMcpServerCommand, MemweaveInjectPlugin } from '../../packages/opencode-plugin/src/index.js';
 
 describe('plugin/index smoke', () => {
   describe('resolveMcpServerCommand', () => {

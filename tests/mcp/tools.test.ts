@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
-import { MemweaveClient } from '../../src/mcp/client.js';
+import { MemweaveClient } from '../../packages/mcp/src/client.js';
 
 const BASE = process.env.MEMWEAVE_TEST_URL || 'http://127.0.0.1:3131';
 

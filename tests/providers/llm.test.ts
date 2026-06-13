@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { NoopLlmProvider } from '../../src/providers/llm/noop.js';
+import { NoopLlmProvider } from '../../packages/server/src/providers/llm/noop.js';
 
 describe('NoopLlmProvider', () => {
   const provider = new NoopLlmProvider();

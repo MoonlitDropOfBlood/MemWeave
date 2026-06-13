@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { formatMemoriesAsXml, type MemoryForFormat } from '../../src/injection/formatter.js';
+import { formatMemoriesAsXml, type MemoryForFormat } from '../../packages/server/src/injection/formatter.js';
 
 describe('formatMemoriesAsXml', () => {
   it('renders memories as XML with phase header', () => {

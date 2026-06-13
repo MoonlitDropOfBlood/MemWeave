@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
-import type { LlmProvider } from '../../src/providers/llm/index.js';
-import { extractEdges } from '../../src/workers/association.js';
-import { NoopLlmProvider } from '../../src/providers/llm/noop.js';
+import type { LlmProvider } from '../../packages/server/src/providers/llm/index.js';
+import { extractEdges } from '../../packages/server/src/workers/association.js';
+import { NoopLlmProvider } from '../../packages/server/src/providers/llm/noop.js';
 
 function mockProvider(json: string): LlmProvider {
   return {

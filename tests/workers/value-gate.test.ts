@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ValueGateResult, evaluateObservation } from '../../src/workers/value-gate.js';
+import { ValueGateResult, evaluateObservation } from '../../packages/server/src/workers/value-gate.js';
 
 describe('ValueGate', () => {
   it('rejects routine file reads', () => {

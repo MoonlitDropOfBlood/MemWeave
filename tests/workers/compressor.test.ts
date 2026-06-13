@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { compressObservation } from '../../src/workers/compressor.js';
-import { NoopLlmProvider } from '../../src/providers/llm/noop.js';
+import { compressObservation } from '../../packages/server/src/workers/compressor.js';
+import { NoopLlmProvider } from '../../packages/server/src/providers/llm/noop.js';
 
 describe('compressObservation', () => {
   it('returns null for noop provider (empty response)', async () => {

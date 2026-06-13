@@ -2,7 +2,7 @@ import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { defaultConfig, expandEnv, expandPath, loadConfig, resolveEnvPlaceholders } from '../../src/core/config.js';
+import { defaultConfig, expandEnv, expandPath, loadConfig, resolveEnvPlaceholders } from '../../packages/server/src/core/config.js';
 
 let tmpDir: string;
 

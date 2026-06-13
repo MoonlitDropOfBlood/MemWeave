@@ -1,0 +1,30 @@
+{
+  "name": "@mem-weave/opencode-plugin",
+  "version": "0.2.0",
+  "description": "MemWeave OpenCode plugin: registers the @mem-weave/mcp server as an MCP provider inside OpenCode, and auto-injects summary-only memory XML into the agent's system prompt at session_start, prompt_delta, and file_pack phases. Closes the progressive disclosure loop: LLM sees summaries, calls memory_expand to fetch full content.",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "clean": "rm -rf dist"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "peerDependencies": {
+    "@opencode-ai/plugin": "^1.17.0"
+  },
+  "devDependencies": {
+    "@opencode-ai/plugin": "^1.17.3"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "license": "MIT"
+}

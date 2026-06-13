@@ -1,6 +1,16 @@
 import { z } from 'zod';
 import type { McpTool } from '../registry.js';
-import { MEMORY_LIMITS } from '../../core/types.js';
+
+/**
+ * Mirror of the server's MEMORY_LIMITS in `src/core/types.ts`. Kept in
+ * sync by hand — the values are policy, not API contract, so duplication
+ * is acceptable. Update both files together.
+ */
+const MEMORY_LIMITS = {
+  CONTENT_MAX: 100_000,
+  CONCEPTS_MAX: 50,
+  FILES_MAX: 50
+} as const;
 
 export const saveTool: McpTool = {
   name: 'memory_save',

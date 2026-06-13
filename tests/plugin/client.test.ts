@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { MemweaveInjectClient, type InjectResponse } from '../../src/plugin/client.js';
+import { MemweaveInjectClient, type InjectResponse } from '../../packages/opencode-plugin/src/client.js';
 
 describe('MemweaveInjectClient', () => {
   it('strips trailing slashes from baseUrl (verifiable via error path)', async () => {

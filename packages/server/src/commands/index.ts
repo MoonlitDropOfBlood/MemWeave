@@ -23,7 +23,6 @@ import { stopCommand } from './stop.js';
 import { statusCommand } from './status.js';
 import { initCommand } from './init.js';
 import { doctorCommand } from './doctor.js';
-import { mcpCommand } from './mcp.js';
 import { migrateCommand } from './migrate.js';
 import { backupCommand } from './backup.js';
 import { helpCommand } from './help.js';
@@ -35,7 +34,6 @@ const handlers: Record<CliCommand, CommandHandler> = {
   status: statusCommand,
   init: initCommand,
   doctor: doctorCommand,
-  mcp: mcpCommand,
   migrate: migrateCommand,
   backup: backupCommand,
   help: helpCommand,

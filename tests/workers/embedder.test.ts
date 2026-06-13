@@ -2,11 +2,11 @@ import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { openDatabase } from '../../src/db/database.js';
-import { MemoryRepo } from '../../src/db/repositories/memory-repo.js';
-import { VectorRepo } from '../../src/db/repositories/vector-repo.js';
-import { startEmbedderWorker } from '../../src/workers/embedder.js';
-import { NoopEmbeddingProvider } from '../../src/providers/embedding/index.js';
+import { openDatabase } from '../../packages/server/src/db/database.js';
+import { MemoryRepo } from '../../packages/server/src/db/repositories/memory-repo.js';
+import { VectorRepo } from '../../packages/server/src/db/repositories/vector-repo.js';
+import { startEmbedderWorker } from '../../packages/server/src/workers/embedder.js';
+import { NoopEmbeddingProvider } from '../../packages/server/src/providers/embedding/index.js';
 
 const DIM = 4;
 let dbPath: string;

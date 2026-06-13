@@ -2,10 +2,10 @@ import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import type { Db } from '../../src/db/database.js';
-import { openDatabase } from '../../src/db/database.js';
-import { MemoryRepo } from '../../src/db/repositories/memory-repo.js';
-import { AccessLogRepo } from '../../src/db/repositories/access-log-repo.js';
+import type { Db } from '../../packages/server/src/db/database.js';
+import { openDatabase } from '../../packages/server/src/db/database.js';
+import { MemoryRepo } from '../../packages/server/src/db/repositories/memory-repo.js';
+import { AccessLogRepo } from '../../packages/server/src/db/repositories/access-log-repo.js';
 
 let db: Db;
 let memoryRepo: MemoryRepo;

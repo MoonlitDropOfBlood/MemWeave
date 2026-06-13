@@ -4,7 +4,7 @@ import {
   initialStrengthFromImportance,
   reinforcementBoost,
   tauFor
-} from '../../src/core/decay.js';
+} from '../../packages/server/src/core/decay.js';
 
 const DAY = 24 * 60 * 60 * 1000;
 

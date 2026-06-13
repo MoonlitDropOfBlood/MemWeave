@@ -6,7 +6,7 @@ import {
   SessionsListResponseSchema,
   ConsolidationTriggerResponseSchema,
   ForgetResponseSchema
-} from '../../src/mcp/client.js';
+} from '../../packages/mcp/src/client.js';
 
 const BASE = process.env.MEMWEAVE_TEST_URL || 'http://127.0.0.1:3131';
 

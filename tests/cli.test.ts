@@ -2,13 +2,13 @@ import { mkdtempSync, rmSync, existsSync, readFileSync, writeFileSync } from 'no
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { CliError, parseCli, type CliCommand } from '../src/cli.js';
-import { helpCommand } from '../src/commands/help.js';
-import { versionCommand } from '../src/commands/version.js';
-import { initCommand } from '../src/commands/init.js';
-import { migrateCommand } from '../src/commands/migrate.js';
-import { backupCommand } from '../src/commands/backup.js';
-import { loadConfig } from '../src/core/config.js';
+import { CliError, parseCli, type CliCommand } from '../packages/server/src/cli.js';
+import { helpCommand } from '../packages/server/src/commands/help.js';
+import { versionCommand } from '../packages/server/src/commands/version.js';
+import { initCommand } from '../packages/server/src/commands/init.js';
+import { migrateCommand } from '../packages/server/src/commands/migrate.js';
+import { backupCommand } from '../packages/server/src/commands/backup.js';
+import { loadConfig } from '../packages/server/src/core/config.js';
 
 describe('parseCli', () => {
   it('parses known commands', () => {
@@ -18,7 +18,6 @@ describe('parseCli', () => {
       [['node', 'memweave', 'status'], 'status', []],
       [['node', 'memweave', 'init'], 'init', []],
       [['node', 'memweave', 'doctor'], 'doctor', []],
-      [['node', 'memweave', 'mcp'], 'mcp', []],
       [['node', 'memweave', 'migrate'], 'migrate', []],
       [['node', 'memweave', 'backup', '/tmp/x.db'], 'backup', ['/tmp/x.db']],
       [['node', 'memweave', 'help'], 'help', []],
@@ -143,5 +142,12 @@ describe('backupCommand', () => {
   it('returns error when DB does not exist', async () => {
     const res = await backupCommand({ env: process.env, args: [join(tmpHome, 'no-such.db')] });
     expect(res.ok).toBe(false);
+  });
+
+  it('rejects `mcp` subcommand with a helpful migration message', () => {
+    // v0.2 removed the `mcp` subcommand. Users who try it should get a
+    // clear pointer to the @mem-weave/mcp package.
+    expect(() => parseCli(['node', 'memweave', 'mcp'])).toThrow(/removed in v0\.2/);
+    expect(() => parseCli(['node', 'memweave', 'mcp'])).toThrow(/@mem-weave\/mcp/);
   });
 });

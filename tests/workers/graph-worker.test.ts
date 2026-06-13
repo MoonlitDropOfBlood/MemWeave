@@ -2,11 +2,11 @@ import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { openDatabase } from '../../src/db/database.js';
-import { MemoryRepo } from '../../src/db/repositories/memory-repo.js';
-import { EdgeRepo } from '../../src/db/repositories/edge-repo.js';
-import { startGraphWorker } from '../../src/workers/graph-worker.js';
-import { NoopLlmProvider } from '../../src/providers/llm/noop.js';
+import { openDatabase } from '../../packages/server/src/db/database.js';
+import { MemoryRepo } from '../../packages/server/src/db/repositories/memory-repo.js';
+import { EdgeRepo } from '../../packages/server/src/db/repositories/edge-repo.js';
+import { startGraphWorker } from '../../packages/server/src/workers/graph-worker.js';
+import { NoopLlmProvider } from '../../packages/server/src/providers/llm/noop.js';
 
 let dbPath: string;
 

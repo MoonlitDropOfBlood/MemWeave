@@ -8,13 +8,10 @@
     "forceConsistentCasingInFileNames": true,
     "skipLibCheck": true,
     "resolveJsonModule": true,
-    "outDir": "dist",
-    "rootDir": ".",
-    "types": ["node", "vitest/globals"]
+    "outDir": "./dist",
+    "rootDir": "./src",
+    "types": ["node"]
   },
-  "include": [
-    "packages/**/*.ts",
-    "tests/**/*.ts",
-    "vitest.config.ts"
-  ]
+  "include": ["src/**/*.ts", "src/types/**/*.d.ts"],
+  "exclude": ["**/*.test.ts", "**/AGENTS.md"]
 }

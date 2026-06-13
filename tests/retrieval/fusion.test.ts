@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { fuseResults, type RankedCandidate, type SearchSource } from '../../src/retrieval/fusion.js';
+import { fuseResults, type RankedCandidate, type SearchSource } from '../../packages/server/src/retrieval/fusion.js';
 
 function mem(id: string, tier: 'short' | 'medium' | 'long' = 'short', strength = 0.5, importance = 5) {
   return {

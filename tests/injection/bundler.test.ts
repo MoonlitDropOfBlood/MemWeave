@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createContentHash, buildStablePack, buildDeltaPack, type InjectionBundle } from '../../src/injection/bundler.js';
+import { createContentHash, buildStablePack, buildDeltaPack, type InjectionBundle } from '../../packages/server/src/injection/bundler.js';
 
 describe('createContentHash', () => {
   it('produces stable hash for same content', () => {
