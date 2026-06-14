@@ -5,7 +5,18 @@
  * This file is the executable for the `memweave` bin command. It parses
  * argv, dispatches to the right command, and prints the result.
  */
+import { existsSync } from 'node:fs';
+import { join } from 'node:path';
+import { homedir } from 'node:os';
 import { parseCli, runCli, CliError } from './cli.js';
+
+// Same fallback as bootstrap.ts: $MEMWEAVE_CONFIG > ~/.memweave/config.jsonc
+function resolveConfigPath(): string | undefined {
+  const explicit = process.env.MEMWEAVE_CONFIG;
+  if (explicit) return explicit;
+  const fallback = join(homedir(), '.memweave', 'config.jsonc');
+  return existsSync(fallback) ? fallback : undefined;
+}
 
 async function main(): Promise<void> {
   let parsed;
@@ -24,7 +35,7 @@ async function main(): Promise<void> {
     command: parsed.command,
     args: parsed.args,
     env: process.env,
-    configPath: process.env.MEMWEAVE_CONFIG
+    configPath: resolveConfigPath()
   });
 
   // Print message + data

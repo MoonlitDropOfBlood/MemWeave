@@ -3,7 +3,9 @@ import type { LlmProvider } from './index.js';
 
 const OpenaiConfigSchema = z.object({
   baseUrl: z.string().url().default('https://api.openai.com/v1'),
-  apiKey: z.string(),
+  // Optional: if missing/empty, the provider degrades to a noop (matches the
+  // "no external LLM required" boundary declared in src/providers/AGENTS.md).
+  apiKey: z.string().optional(),
   model: z.string().default('gpt-4o-mini'),
   temperature: z.number().min(0).max(2).default(0.2),
   maxTokens: z.number().int().positive().default(2048)
@@ -14,6 +16,11 @@ export class OpenaiLlmProvider implements LlmProvider {
 
   constructor(raw: Record<string, unknown>) {
     this.config = OpenaiConfigSchema.parse(raw);
+  }
+
+  /** True only when a real remote endpoint is configured. */
+  get isConfigured(): boolean {
+    return typeof this.config.apiKey === 'string' && this.config.apiKey.length > 0;
   }
 
   async call(systemPrompt: string, userPrompt: string): Promise<string> {

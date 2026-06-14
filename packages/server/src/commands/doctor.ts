@@ -82,7 +82,11 @@ export const doctorCommand: CommandHandler = async (ctx: CliContext): Promise<Co
   // 5. LLM
   if (config.llm.provider === 'openai-compatible') {
     const hasKey = Boolean(config.llm.apiKey);
-    results.push({ name: 'llm', ok: hasKey, detail: hasKey ? 'apiKey set' : 'apiKey missing' });
+    results.push({
+      name: 'llm',
+      ok: true,
+      detail: hasKey ? 'apiKey set' : 'configured (no apiKey → falls back to noop)'
+    });
   } else {
     results.push({ name: 'llm', ok: true, detail: 'noop' });
   }
