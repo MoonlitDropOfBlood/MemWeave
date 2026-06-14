@@ -16,7 +16,7 @@ export const startCommand: CommandHandler = async (ctx: CliContext): Promise<Com
   const { createHttpServer } = await import('../server/http.js');
   const { startConsolidationScheduler } = await import('../server/scheduler.js');
 
-  const app = await createHttpServer({ dbPath });
+  const app = await createHttpServer({ dbPath, configPath: ctx.configPath });
   if (config.consolidation.enabled) {
     startConsolidationScheduler({
       dbPath,
