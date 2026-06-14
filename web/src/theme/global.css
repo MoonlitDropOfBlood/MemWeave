@@ -53,13 +53,18 @@ input, textarea, select {
   font-size: inherit;
 }
 
-/* Prevent default-browser flash on select elements */
+/* Prevent default-browser flash on select elements.
+   The native <select> dropdown popup is OS-rendered — without appearance: none
+   its background is controlled by the OS color scheme, not CSS.
+   By forcing color-scheme: light, the OS renders a light popup regardless of
+   system dark mode, avoiding the black-flash. */
 select {
   background: var(--bg);
   color: var(--text);
   border: 1px solid var(--border);
   border-radius: var(--radius);
   padding: var(--space-2) var(--space-3);
+  color-scheme: light;
 }
 
 p {
