@@ -18,8 +18,21 @@ export function registerSettingsRoute(app: FastifyInstance, configPath?: string)
         ...config.auth,
         deviceApiKey: maskIfString(config.auth.deviceApiKey)
       },
-      embedding: { ...config.embedding, apiKey: maskIfString(config.embedding.apiKey) },
-      llm: { ...config.llm, apiKey: maskIfString(config.llm.apiKey) },
+      embedding: {
+        ...config.embedding,
+        apiKey: maskIfString(config.embedding.apiKey),
+        // Whether the provider has enough to actually call a remote endpoint.
+        // `local-xenova` doesn't need a key; `openai-compatible` does.
+        isConfigured: config.embedding.provider === 'local-xenova'
+          || Boolean(config.embedding.apiKey && config.embedding.baseUrl)
+      },
+      llm: {
+        ...config.llm,
+        apiKey: maskIfString(config.llm.apiKey),
+        // `openai-compatible` without an apiKey is a noop. The provider
+        // layer still degrades gracefully, but the UI should flag it.
+        isConfigured: config.llm.provider === 'noop' || Boolean(config.llm.apiKey)
+      },
       consolidation: config.consolidation,
       injection: config.injection,
       search: config.search

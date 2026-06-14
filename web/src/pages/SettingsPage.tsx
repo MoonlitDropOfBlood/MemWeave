@@ -56,8 +56,14 @@ export function SettingsPage() {
             <Row k={t('settingsPage.server.host')} v={settingsQ.data.server.host} />
             <Row k={t('settingsPage.server.port')} v={settingsQ.data.server.port.toString()} />
             <Row k={t('settingsPage.server.dbPath')} v={settingsQ.data.storage.path} mono />
-            <Row k={t('settingsPage.server.embedding')} v={`${settingsQ.data.embedding.provider} (${settingsQ.data.embedding.model}, ${settingsQ.data.embedding.dimensions}d)`} />
-            <Row k={t('settingsPage.server.llm')} v={`${settingsQ.data.llm.provider} (${settingsQ.data.llm.model})`} />
+            <Row
+              k={t('settingsPage.server.embedding')}
+              v={`${settingsQ.data.embedding.provider} (${settingsQ.data.embedding.model}, ${settingsQ.data.embedding.dimensions}d)${settingsQ.data.embedding.isConfigured ? '' : ' ' + t('settingsPage.server.notConfigured')}`}
+            />
+            <Row
+              k={t('settingsPage.server.llm')}
+              v={`${settingsQ.data.llm.provider} (${settingsQ.data.llm.model})${settingsQ.data.llm.isConfigured ? '' : ' ' + t('settingsPage.server.notConfigured')}`}
+            />
             <Row k={t('settingsPage.server.consolidation')} v={settingsQ.data.consolidation.enabled ? `${t('settingsPage.server.every')} ${settingsQ.data.consolidation.intervalHours}h` : t('settingsPage.server.disabled')} />
             <Row k={t('settingsPage.server.authRequired')} v={settingsQ.data.auth.requireAuth ? t('settingsPage.server.yes') : t('settingsPage.server.noDevMode')} />
           </dl>

@@ -193,8 +193,8 @@ export interface Settings {
   server: { host: string; port: number };
   storage: { path: string };
   auth: { defaultTenantName: string; requireAuth: boolean; deviceApiKey?: string };
-  embedding: { provider: string; model: string; dimensions: number; batchSize: number; apiKey?: string; baseUrl?: string };
-  llm: { provider: string; model: string; temperature: number; maxTokens: number; apiKey?: string; baseUrl?: string };
+  embedding: { provider: string; model: string; dimensions: number; batchSize: number; apiKey?: string; baseUrl?: string; isConfigured: boolean };
+  llm: { provider: string; model: string; temperature: number; maxTokens: number; apiKey?: string; baseUrl?: string; isConfigured: boolean };
   consolidation: { enabled: boolean; intervalHours: number; accessLogRetentionDays: number };
   injection: { sessionStartBudget: number; promptDeltaBudget: number; filePackBudget: number; failureDeltaBudget: number };
   search: { rrfK: number; bm25Limit: number; vectorLimit: number; graphLimit: number; causalLimit: number; vectorMinSimilarity: number; bm25Only: boolean };
