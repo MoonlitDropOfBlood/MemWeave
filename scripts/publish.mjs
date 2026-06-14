@@ -3,6 +3,9 @@
  * publish.mjs — build + dry-run + publish all 3 @mem-weave/* packages in
  * dependency order (server -> mcp -> opencode-plugin).
  *
+ * For the server package, the web UI (Vite SPA) is built and copied into
+ * dist/web/ so `npx @mem-weave/server start` serves the full UI at /ui/.
+ *
  * Modes:
  *   node scripts/publish.mjs                Dry-run every package (default; safe)
  *   node scripts/publish.mjs --dry-run      Same as above
@@ -13,7 +16,7 @@
  * NEVER stores or prints the token.
  */
 import { execSync, spawnSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import { cpSync, existsSync, readFileSync, rmSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 const root = resolve(import.meta.dirname, '..');
@@ -60,8 +63,23 @@ for (const p of PACKAGES) {
   const v = readVersion(p.dir);
   console.log(`\n--- ${v.name}@${v.version} (${p.dir}) ---`);
 
-  // 1. Build
+  // 1. Build server TypeScript
   run('npx tsc -p tsconfig.json', resolve(root, p.dir));
+
+  // 1b. For the server package, build the web SPA and bundle it into dist/web/
+  //     so the HTTP server can serve /ui/ from the npm package.
+  if (p.name === '@mem-weave/server') {
+    const webDist = resolve(root, 'dist/web');
+    const serverDistWeb = resolve(root, p.dir, 'dist/web');
+
+    // Build the web app (Vite outputs to <root>/dist/web/)
+    run('npm run web:build', root);
+
+    // Copy into the server package so `../../dist/web` resolves inside the package
+    if (existsSync(serverDistWeb)) rmSync(serverDistWeb, { recursive: true });
+    cpSync(webDist, serverDistWeb, { recursive: true });
+    console.log(`  → web UI copied to ${p.dir}/dist/web/ (${readFileSync(serverDistWeb + '/index.html', 'utf8').length} bytes)`);
+  }
 
   // 2. Verify the tarball would contain the right files
   run('npm pack --dry-run', resolve(root, p.dir));

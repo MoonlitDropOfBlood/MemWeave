@@ -27,7 +27,7 @@ async function main(): Promise<void> {
     configPath: process.env.MEMWEAVE_CONFIG
   });
 
-  // Print message + data, and exit non-zero on failure
+  // Print message + data
   if (result.message) {
     if (result.ok) {
       // eslint-disable-next-line no-console
@@ -41,6 +41,11 @@ async function main(): Promise<void> {
     // eslint-disable-next-line no-console
     console.log(JSON.stringify(result.data, null, 2));
   }
+
+  // For the `start` command, the HTTP server keeps the event loop alive —
+  // do NOT call process.exit() or it would kill the server immediately.
+  if (parsed.command === 'start') return;
+
   process.exit(result.ok ? 0 : 1);
 }
 
