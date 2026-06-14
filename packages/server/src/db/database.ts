@@ -1,8 +1,11 @@
 import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
+import { createRequire } from 'node:module';
 import Database from 'better-sqlite3';
 import { SCHEMA_SQL } from './schema.js';
 import { logger } from '../server/logger.js';
+
+const _require = createRequire(import.meta.url);
 
 export type Db = Database.Database;
 
@@ -53,7 +56,7 @@ export function openDatabase(path: string, options: OpenDatabaseOptions = {}): D
       // Use a dynamic import to avoid hard-failing test environments that
       // exercise only non-vector code paths.
       // eslint-disable-next-line @typescript-eslint/no-var-requires
-      const sqliteVec = require('sqlite-vec');
+      const sqliteVec = _require('sqlite-vec');
       sqliteVec.load(db);
 
       const dims = options.vectorDimensions ?? VECTOR_DEFAULT_DIMENSIONS;
