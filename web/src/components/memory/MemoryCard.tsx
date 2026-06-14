@@ -19,19 +19,22 @@ export function MemoryCard({
       className={selected ? `${styles.card} ${styles.cardSelected}` : styles.card}
       onClick={onClick}
       type="button"
+      style={{ ['--card-accent' as string]: `var(--type-${memory.type})` }}
     >
+      <span className={styles.node} aria-hidden="true" />
+      <span className={styles.accessBadge} title={`${memory.accessCount} accesses`}>
+        {memory.accessCount}×
+      </span>
       <div className={styles.header}>
         <TypeBadge type={memory.type} />
         <TierBadge tier={memory.tier} />
-        <span className={styles.title}>{memory.title}</span>
       </div>
-      <div className={styles.summary}>{truncate(memory.summary, 140)}</div>
+      <div className={styles.title}>{memory.title}</div>
+      <div className={styles.summary}>{truncate(memory.summary, 160)}</div>
       <ScopeChips scopes={memory.scopes} />
       <div className={styles.footer}>
-        <StrengthBar value={memory.strength} label />
-        <span className={styles.meta}>
-          {memory.accessCount}× · {formatRelativeTime(memory.lastAccessedAt)}
-        </span>
+        <StrengthBar value={memory.strength} />
+        <span className={styles.meta}>{formatRelativeTime(memory.lastAccessedAt)}</span>
       </div>
     </button>
   );

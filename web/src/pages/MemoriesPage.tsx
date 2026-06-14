@@ -44,15 +44,27 @@ export function MemoriesPage() {
     }
   });
 
-  const setFilter = (key: string, value: string, multi: boolean) => {
+  // Checkbox 的"已选中"语义：URL 没有任何过滤项时 → 全部视为选中（全显）
+  const isTypeChecked = (t: string) => typeFilter.length === 0 || typeFilter.includes(t);
+  const isTierChecked = (t: string) => tierFilter.length === 0 || tierFilter.includes(t);
+
+  // 当用户首次点掉一个 checkbox（原本 URL 为空），需要把"全显"显式化
+  // 为"除此以外的全部"，这样后续 toggle 才不会失真。
+  const toggleMulti = (key: 'type' | 'tier', value: string, allValues: readonly string[]) => {
     setSearchParams((prev) => {
-      if (multi) {
-        const current = prev.getAll(key);
-        const next = current.includes(value) ? current.filter((v) => v !== value) : [...current, value];
+      const current = prev.getAll(key);
+      if (current.length === 0) {
+        // 全显 → 显式化为"全部除 value"
+        const next = allValues.filter((v) => v !== value);
         prev.delete(key);
         for (const v of next) prev.append(key, v);
-      } else {
-        prev.set(key, value);
+        return prev;
+      }
+      const next = current.includes(value) ? current.filter((v) => v !== value) : [...current, value];
+      // 如果取消到空 → 退回"全显"（清空 URL）
+      prev.delete(key);
+      if (next.length > 0 && next.length < allValues.length) {
+        for (const v of next) prev.append(key, v);
       }
       return prev;
     });
@@ -68,8 +80,8 @@ export function MemoriesPage() {
             <FilterCheckbox
               key={typeVal}
               label={typeVal}
-              checked={typeFilter.includes(typeVal)}
-              onChange={() => setFilter('type', typeVal, true)}
+              checked={isTypeChecked(typeVal)}
+              onChange={() => toggleMulti('type', typeVal, ALL_TYPES)}
             />
           ))}
         </FilterGroup>
@@ -79,8 +91,8 @@ export function MemoriesPage() {
             <FilterCheckbox
               key={tierLabel}
               label={tierLabel}
-              checked={tierFilter.includes(tierLabel)}
-              onChange={() => setFilter('tier', tierLabel, true)}
+              checked={isTierChecked(tierLabel)}
+              onChange={() => toggleMulti('tier', tierLabel, ALL_TIERS)}
             />
           ))}
         </FilterGroup>
