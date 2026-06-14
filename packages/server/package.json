@@ -1,6 +1,6 @@
 {
   "name": "@mem-weave/server",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "description": "MemWeave local-first memory infrastructure for AI agents: structured memory, 4-layer retrieval (BM25 + vector + graph + causal), token-budgeted injection, server-side write deduplication, and background consolidation. Server process: Fastify REST API + CLI.",
   "type": "module",
   "main": "./dist/cli-entry.js",
