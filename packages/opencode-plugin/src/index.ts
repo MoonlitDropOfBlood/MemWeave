@@ -1,9 +1,5 @@
 import type { Plugin } from '@opencode-ai/plugin';
 import type { Model } from '@opencode-ai/sdk';
-import { existsSync, readdirSync, statSync, mkdirSync } from 'node:fs';
-import { join, dirname, resolve } from 'node:path';
-import { homedir, tmpdir } from 'node:os';
-import { execSync } from 'node:child_process';
 import { MemweaveInjectClient, type InjectResponse } from './client.js';
 
 const API = process.env.MEMWEAVE_URL || 'http://127.0.0.1:3131';
@@ -64,205 +60,25 @@ function extractFilePaths(args: Record<string, unknown>): string[] {
   return files;
 }
 
-/**
- * Ensure @mem-weave/mcp is installed at a stable, known location, then
- * return the absolute path to its `dist/index.js`.
- *
- * The user installs this plugin via npx. We cannot rely on a sibling
- * `node_modules/@mem-weave/mcp` directory (it lives in the npx temp
- * dir, not next to the plugin). We also cannot rely on `npx
- * @mem-weave/mcp` on Windows + npm 14: scoped packages lose their
- * `bin` field on publish, so npx has no command to run and silently
- * exits.
- *
- * Workaround: on first call, run `npm install --prefix <stable dir>
- * @mem-weave/mcp@<pinned>` to fetch the package and its deps into a
- * deterministic location. Subsequent calls hit the existing install
- * (no network, no delay). The install dir is `<tmpdir>/memweave-mcp`,
- * shared across plugin restarts on the same machine.
- *
- * The first install takes ~15s while npm fetches the package; later
- * calls are microseconds. We emit a one-time log so the user knows
- * what is happening.
- */
-const MCP_VERSION = '0.2.3';
-let ensurePromise: Promise<string | undefined> | undefined;
-let warned = false;
-
-function mcpInstallDir(): string {
-  return join(tmpdir(), 'memweave-mcp');
-}
-
-function mcpDistPath(): string {
-  return join(mcpInstallDir(), 'node_modules', '@mem-weave', 'mcp', 'dist', 'index.js');
-}
-
-export function ensureMcpInstalled(): Promise<string | undefined> {
-  if (ensurePromise) return ensurePromise;
-  const candidate = mcpDistPath();
-  if (existsSync(candidate)) {
-    ensurePromise = Promise.resolve(candidate);
-    return ensurePromise;
-  }
-  ensurePromise = (async () => {
-    const dest = mcpInstallDir();
-    if (!warned) {
-      warned = true;
-      // eslint-disable-next-line no-console
-      console.warn(
-        `[memweave] @mem-weave/mcp not found locally; installing to ${dest} ` +
-        `(one-time, ~15s). This is needed because npm 14 cannot publish a ` +
-        `bin field on scoped packages, so npx cannot auto-launch the MCP server.`
-      );
-    }
-    try {
-      mkdirSync(dest, { recursive: true });
-      // --silent avoids the noisy "npm notice" output that would pollute
-      // OpenCode's plugin log.
-      execSync(
-        `npm install --prefix "${dest}" --no-audit --no-fund --silent @mem-weave/mcp@${MCP_VERSION}`,
-        { stdio: 'pipe' }
-      );
-    } catch (err) {
-      // eslint-disable-next-line no-console
-      console.error(`[memweave] failed to install @mem-weave/mcp: ${(err as Error).message}`);
-      ensurePromise = undefined; // retry on next call
-      return undefined;
-    }
-    return existsSync(candidate) ? candidate : undefined;
-  })();
-  return ensurePromise;
-}
-
-/**
- * Resolve the absolute path to the installed @mem-weave/mcp package dist.
- * Returns synchronously only if the package is already installed; otherwise
- * the caller should await `ensureMcpInstalled()`.
- */
-export function resolveMcpDistPath(): string | undefined {
-  // 1. Global install: most reliable for npm i -g @mem-weave/mcp
-  try {
-    const globalRoot = execSync('npm root -g', { encoding: 'utf-8' }).trim();
-    const candidate = join(globalRoot, '@mem-weave', 'mcp', 'dist', 'index.js');
-    if (existsSync(candidate)) return candidate;
-  } catch { /* npm not in PATH, or no global dir */ }
-
-  // 2. npx cache -- falls back if user has used npx at least once
-  try {
-    const npxCache = join(homedir(), '.npm', '_npx');
-    if (existsSync(npxCache)) {
-      // Pick the most recently modified cache that contains @mem-weave/mcp
-      const entries: Array<{ dir: string; mtime: number }> = [];
-      for (const hash of readdirSync(npxCache)) {
-        const candidate = join(npxCache, hash, 'node_modules', '@mem-weave', 'mcp', 'dist', 'index.js');
-        if (existsSync(candidate)) {
-          const stat = statSync(join(npxCache, hash));
-          entries.push({ dir: candidate, mtime: stat.mtimeMs });
-        }
-      }
-      entries.sort((a, b) => b.mtime - a.mtime);
-      if (entries[0]) return entries[0].dir;
-    }
-  } catch { /* _npx unreadable */ }
-
-  // 3. Fall back to plugin node_modules (peer install pattern)
-  const here = dirname(new URL(import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1'));
-  const localCandidate = resolve(here, '..', 'node_modules', '@mem-weave', 'mcp', 'dist', 'index.js');
-  if (existsSync(localCandidate)) return localCandidate;
-
-  return undefined;
-}
-
-/**
- * Return the command to launch the MemWeave MCP server.
- *
- * Strategy: the plugin is installed by OpenCode via npx, so it lives
- * in a transient cache and has no sibling `node_modules`. We can't
- * rely on `npx @mem-weave/mcp` either (scoped packages lose their
- * `bin` field on npm 9+, and npx 14 on Windows silently exits when
- * there is no command to run).
- *
- * The plugin therefore installs @mem-weave/mcp to a stable shared
- * directory (`<tmpdir>/memweave-mcp`) on first call, then spawns
- * `node <dist/index.js>` directly. The first call may block for
- * ~15s while npm downloads the package and its deps; subsequent
- * calls are synchronous and microsecond-fast.
- *
- * The install is `fire-and-forget` from the caller's perspective: the
- * function returns the synchronous `command: string[]` so OpenCode
- * can `child_process.spawn` it, but we kick off the install in the
- * background so the next restart finds the dist already on disk.
- *
- * The `pluginDir` parameter is kept for backward compatibility with
- * callers/tests.
- */
-export function resolveMcpServerCommand(_pluginDir: string): string[] {
-  const distPath = resolveMcpDistPath();
-  if (distPath) return ['node', distPath];
-
-  // Kick off the install in the background. By the time the MCP
-  // server process is started, the install may or may not be done;
-  // either way, the failure mode is "MCP unavailable" not "plugin
-  // crashed", since we still hand OpenCode a valid command.
-  void ensureMcpInstalled();
-
-  return ['npx', '--yes', '@mem-weave/mcp'];
-}
-
-export const MemweaveInjectPlugin: Plugin = async (ctx) => {
+export const MemweaveInjectPlugin: Plugin = async () => {
   const client = new MemweaveInjectClient({ baseUrl: API, timeout: TIMEOUT });
   const sessionInjected = INJECTED_CACHE;
 
   return {
-    // ── Step 1: register the MemWeave MCP server with OpenCode ─────────────
-    // This is the progressive-disclosure close-the-loop mechanism. Once
-    // registered, OpenCode connects to the MCP server on plugin load and
-    // exposes its 10 tools (memory_save, memory_recall, memory_smart_search,
-    // memory_expand, memory_graph_query, memory_file_history, …) directly
-    // to the LLM. The LLM can then call e.g. memory_expand to fetch the
-    // full body of a memory it only saw a summary of in the injected XML.
+    // As of v0.4 the MemWeave MCP server is embedded in the main
+    // @mem-weave/server process and exposed at /mcp (Streamable HTTP).
+    // The user wires it up in opencode.json directly:
     //
-    // Pattern from the OpenCode plugin manual: see the config hook
-    // section in https://opencode.ai/docs/plugins/ and the config-hook
-    // chapter in joshuadavidthomas/opencode-plugins-manual. oh-my-openagent
-    // uses the same mechanism to ship its own MCP servers.
-    config: async (config) => {
-      config.mcp = config.mcp ?? {};
-      // Guard against name collision. If the user already has an MCP server
-      // named 'memweave' (from another plugin, say), merging into it would
-      // silently clobber it. Refuse and surface a clear message in the
-      // OpenCode logs instead.
-      if (config.mcp['memweave'] && config.mcp['memweave'].type !== 'local') {
-        // eslint-disable-next-line no-console
-        console.warn(
-          '[memweave] config.mcp["memweave"] is already set to a non-local server; ' +
-          'skipping registration. If you want MemWeave tools, remove or rename ' +
-          'the existing entry.'
-        );
-        return;
-      }
-      config.mcp['memweave'] = {
-        type: 'local',
-        command: resolveMcpServerCommand(ctx.directory),
-        environment: {
-          MEMWEAVE_URL: API
-        },
-        enabled: true,
-        // MCP tool calls can be slow on first call:
-        //   - local-xenova needs to load a ~30MB model on cold start
-        //   - consolidation runs the 4-layer search pipeline
-        // The 60s ceiling accommodates the worst-case cold start; subsequent
-        // calls are typically sub-second. Override per-call via
-        // MEMWEAVE_PLUGIN_TIMEOUT (currently unused by MCP path but kept
-        // for symmetry with the inject client).
-        timeout: 60000
-      };
-    },
+    //   mcp: { memweave: { type: 'remote', url: 'http://127.0.0.1:3131/mcp' } }
+    //
+    // This plugin no longer spawns an MCP child process — it only
+    // handles the summary-only XML injection that primes the LLM
+    // before it calls memory_expand on the remote MCP server.
 
-    // ── Step 2: inject summary-only XML into the system prompt ────────────
+    // ── Inject summary-only XML into the system prompt ────────────────
     // The XML contains only <title> + <summary> per memory (progressive
-    // disclosure). To get full body, the LLM calls memory_expand on the
-    // MemWeave MCP server (registered above).
+    // disclosure). To get full body, the LLM calls memory_expand on
+    // the remote MemWeave MCP server.
     'experimental.chat.system.transform': async (
       _input: { sessionID?: string; model: Model },
       output: { system: string[] }

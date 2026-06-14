@@ -5,6 +5,8 @@ import { existsSync, readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { openDatabase } from '../db/database.js';
+import { buildMcpHandler } from '../mcp/index.js';
+import { logger } from './logger.js';
 import { registerInjectionRoute } from '../rest/routes/injection.js';
 import { registerMemoriesRoute } from '../rest/routes/memories.js';
 import { registerStatsRoute } from '../rest/routes/stats.js';
@@ -29,7 +31,7 @@ export async function createHttpServer(options: CreateHttpServerOptions) {
 
   app.addHook('onClose', async () => db.close());
 
-  app.setErrorHandler((error, _request, reply) => {
+  app.setErrorHandler((error, request, reply) => {
     if (error instanceof ZodError) {
       return reply.code(400).send({
         error: {
@@ -39,6 +41,14 @@ export async function createHttpServer(options: CreateHttpServerOptions) {
         }
       });
     }
+    // Log the real cause so /mcp debugging is possible. Pino is the
+    // structured logger the rest of the server uses; the request log
+    // includes URL + method which is enough to spot which route blew up.
+    logger.error({
+      err: { message: (error as Error).message, stack: (error as Error).stack },
+      url: request.url,
+      method: request.method
+    }, 'request failed');
     return reply.code(500).send({
       error: { code: 'INTERNAL_ERROR', message: 'Internal server error' }
     });
@@ -52,6 +62,35 @@ export async function createHttpServer(options: CreateHttpServerOptions) {
   registerConsolidationRoute(app, options.dbPath);
   registerDevicesRoute(app, options.dbPath);
   registerSettingsRoute(app, options.configPath);
+
+  // MCP endpoint — Streamable HTTP transport at /mcp. Each POST
+  // opens a fresh MCP server + transport pair (stateless mode),
+  // backed by an McpService that talks to the in-process SQLite
+  // via repos. See ../mcp/index.ts for the handler implementation.
+  //
+  // The MCP spec allows BOTH a single JSON object per request AND
+  // newline-delimited JSON (one batched request can carry many
+  // JSON-RPC messages). Fastify's built-in JSON parser only handles
+  // the first form; the NDJSON form would error out. We swap in a
+  // permissive parser for /mcp that hands the raw bytes to the
+  // bridge (which decides per-line whether to parse as JSON or
+  // forward as-is).
+  app.addContentTypeParser('application/json', { parseAs: 'string' }, (_req, body, done) => {
+    done(null, body);
+  });
+  const handleMcp = buildMcpHandler({ db });
+  app.post('/mcp', async (req, reply) => {
+    await handleMcp(req, reply);
+  });
+  app.get('/mcp', async (req, reply) => {
+    // SSE-streaming variant: clients that hold a long-lived
+    // Streamable HTTP connection use GET to receive server-pushed
+    // notifications. The SDK handler manages the rest.
+    await handleMcp(req, reply);
+  });
+  app.delete('/mcp', async (req, reply) => {
+    await handleMcp(req, reply);
+  });
 
   // Serve the Web UI (SPA) at /ui/*
   // web/ builds to ../dist/web/ relative to the repo root.

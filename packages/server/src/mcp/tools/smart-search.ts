@@ -1,10 +1,9 @@
 import { z } from 'zod';
 import type { McpTool } from '../registry.js';
-import { SearchResponseSchema } from '../client.js';
 
 export const smartSearchTool: McpTool = {
   name: 'memory_smart_search',
-  description: 'Hybrid semantic+keyword search with progressive disclosure.',
+  description: 'Hybrid semantic + keyword search with 4-layer fusion. Returns compact summaries (progressive disclosure).',
   inputSchema: {
     query: z.string().describe('Search query'),
     limit: z.number().optional().describe('Max results (default 8)'),
@@ -13,7 +12,7 @@ export const smartSearchTool: McpTool = {
     includeCausal: z.boolean().optional().describe('Include causal chain recall'),
     mode: z.enum(['compact', 'full']).optional().describe('Result detail level')
   },
-  handler: async (client, args) => {
-    return client.request('POST', '/api/v1/memories/search', { ...args, mode: args.mode ?? 'compact' }, SearchResponseSchema);
+  handler: async (service, args) => {
+    return service.searchMemories(args);
   }
 };
