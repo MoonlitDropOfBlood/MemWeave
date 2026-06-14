@@ -68,17 +68,18 @@ function extractFilePaths(args: Record<string, unknown>): string[] {
  * Resolve the absolute path to the installed @mem-weave/mcp package dist,
  * so we can spawn it directly via node instead of npx.
  *
- * Why: npx @mem-weave/mcp on Windows with npm 9+ silently exits because
- * npm refuses to publish a bin field on a scoped package (it gets
- * silently stripped from the tarball), and npx then has no command to
- * run. Spawning node with the resolved path sidesteps the entire npx
- * bin-resolution machinery.
+ * Why this exists:
+ *   npm 9+ refuses to publish a `bin` field on scoped packages (it gets
+ *   silently stripped from the tarball), and `npx @mem-weave/mcp` then
+ *   has no command to run: it silently exits. This makes pure-npx
+ *   install impossible for our scoped MCP server on Windows + npm 14.
+ *
+ *   We work around it by spawning `node <absolute dist path>` directly.
  *
  * Search order:
- *   1. NODE_PATH env (advanced: let the user override)
- *   2. npm root -g (global install)
- *   3. Common npx cache locations under ~/.npm/_npx/<HASH>/node_modules/
- *   4. The plugin node_modules dir (works if user installed mcp next to the plugin)
+ *   1. Global install: `npm root -g` (recommended for users)
+ *   2. npx cache locations under ~/.npm/_npx/<hash>/node_modules/ (transient)
+ *   3. The plugin node_modules dir (works if user installed mcp next to the plugin)
  */
 export function resolveMcpDistPath(): string | undefined {
   // 1. Global install: most reliable for npm i -g @mem-weave/mcp
@@ -117,18 +118,31 @@ export function resolveMcpDistPath(): string | undefined {
 /**
  * Return the command to launch the MemWeave MCP server.
  *
- * We prefer spawn node with an absolute dist path so we dont depend on
- * npx bin resolution (which is broken for scoped packages with no bin
- * on npm 9+). If no path can be resolved, we fall back to npx as a
- * last resort: the user will see a clearer error from npx than from
- * a silent failure.
+ * Prefers spawning node with an absolute dist path. Falls back to npx
+ * only as a last resort. On Windows with npm 14, npx @mem-weave/mcp
+ * silently fails (no bin field on scoped packages), so the absolute
+ * path approach is the only reliable way to launch the MCP server.
+ *
+ * If no path can be resolved, emits a one-time warning telling the
+ * user how to install @mem-weave/mcp globally.
  *
  * The pluginDir parameter is kept for backward compatibility (the
  * function is exported and referenced in tests).
  */
+let warned = false;
 export function resolveMcpServerCommand(_pluginDir: string): string[] {
   const distPath = resolveMcpDistPath();
   if (distPath) return ['node', distPath];
+  if (!warned) {
+    warned = true;
+    // eslint-disable-next-line no-console
+    console.warn(
+      '[memweave] @mem-weave/mcp dist not found. OpenCode installed the ' +
+      'plugin via npx, but the MCP server must be installed separately ' +
+      'because npm 14 cannot publish a bin field on scoped packages. ' +
+      'Run: npm i -g @mem-weave/mcp   (one-time, ~1s)'
+    );
+  }
   return ['npx', '--yes', '@mem-weave/mcp'];
 }
 
