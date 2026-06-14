@@ -1,5 +1,9 @@
 import type { Plugin } from '@opencode-ai/plugin';
 import type { Model } from '@opencode-ai/sdk';
+import { existsSync, readdirSync, statSync } from 'node:fs';
+import { join, dirname, resolve } from 'node:path';
+import { homedir } from 'node:os';
+import { execSync } from 'node:child_process';
 import { MemweaveInjectClient, type InjectResponse } from './client.js';
 
 const API = process.env.MEMWEAVE_URL || 'http://127.0.0.1:3131';
@@ -61,15 +65,70 @@ function extractFilePaths(args: Record<string, unknown>): string[] {
 }
 
 /**
+ * Resolve the absolute path to the installed @mem-weave/mcp package dist,
+ * so we can spawn it directly via node instead of npx.
+ *
+ * Why: npx @mem-weave/mcp on Windows with npm 9+ silently exits because
+ * npm refuses to publish a bin field on a scoped package (it gets
+ * silently stripped from the tarball), and npx then has no command to
+ * run. Spawning node with the resolved path sidesteps the entire npx
+ * bin-resolution machinery.
+ *
+ * Search order:
+ *   1. NODE_PATH env (advanced: let the user override)
+ *   2. npm root -g (global install)
+ *   3. Common npx cache locations under ~/.npm/_npx/<HASH>/node_modules/
+ *   4. The plugin node_modules dir (works if user installed mcp next to the plugin)
+ */
+export function resolveMcpDistPath(): string | undefined {
+  // 1. Global install: most reliable for npm i -g @mem-weave/mcp
+  try {
+    const globalRoot = execSync('npm root -g', { encoding: 'utf-8' }).trim();
+    const candidate = join(globalRoot, '@mem-weave', 'mcp', 'dist', 'index.js');
+    if (existsSync(candidate)) return candidate;
+  } catch { /* npm not in PATH, or no global dir */ }
+
+  // 2. npx cache -- falls back if user has used npx at least once
+  try {
+    const npxCache = join(homedir(), '.npm', '_npx');
+    if (existsSync(npxCache)) {
+      // Pick the most recently modified cache that contains @mem-weave/mcp
+      const entries: Array<{ dir: string; mtime: number }> = [];
+      for (const hash of readdirSync(npxCache)) {
+        const candidate = join(npxCache, hash, 'node_modules', '@mem-weave', 'mcp', 'dist', 'index.js');
+        if (existsSync(candidate)) {
+          const stat = statSync(join(npxCache, hash));
+          entries.push({ dir: candidate, mtime: stat.mtimeMs });
+        }
+      }
+      entries.sort((a, b) => b.mtime - a.mtime);
+      if (entries[0]) return entries[0].dir;
+    }
+  } catch { /* _npx unreadable */ }
+
+  // 3. Fall back to plugin node_modules (peer install pattern)
+  const here = dirname(new URL(import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1'));
+  const localCandidate = resolve(here, '..', 'node_modules', '@mem-weave', 'mcp', 'dist', 'index.js');
+  if (existsSync(localCandidate)) return localCandidate;
+
+  return undefined;
+}
+
+/**
  * Return the command to launch the MemWeave MCP server.
  *
- * Now that the project is published as npm packages, we simply invoke
- * `npx --yes @mem-weave/mcp` — no need to resolve a local source path.
+ * We prefer spawn node with an absolute dist path so we dont depend on
+ * npx bin resolution (which is broken for scoped packages with no bin
+ * on npm 9+). If no path can be resolved, we fall back to npx as a
+ * last resort: the user will see a clearer error from npx than from
+ * a silent failure.
  *
- * The `pluginDir` parameter is kept for backward compatibility (the
+ * The pluginDir parameter is kept for backward compatibility (the
  * function is exported and referenced in tests).
  */
 export function resolveMcpServerCommand(_pluginDir: string): string[] {
+  const distPath = resolveMcpDistPath();
+  if (distPath) return ['node', distPath];
   return ['npx', '--yes', '@mem-weave/mcp'];
 }
 
@@ -83,10 +142,10 @@ export const MemweaveInjectPlugin: Plugin = async (ctx) => {
     // registered, OpenCode connects to the MCP server on plugin load and
     // exposes its 10 tools (memory_save, memory_recall, memory_smart_search,
     // memory_expand, memory_graph_query, memory_file_history, …) directly
-    // to the LLM. The LLM can then call e.g. `memory_expand` to fetch the
+    // to the LLM. The LLM can then call e.g. memory_expand to fetch the
     // full body of a memory it only saw a summary of in the injected XML.
     //
-    // Pattern from the OpenCode plugin manual: see the `config` hook
+    // Pattern from the OpenCode plugin manual: see the config hook
     // section in https://opencode.ai/docs/plugins/ and the config-hook
     // chapter in joshuadavidthomas/opencode-plugins-manual. oh-my-openagent
     // uses the same mechanism to ship its own MCP servers.
@@ -125,7 +184,7 @@ export const MemweaveInjectPlugin: Plugin = async (ctx) => {
 
     // ── Step 2: inject summary-only XML into the system prompt ────────────
     // The XML contains only <title> + <summary> per memory (progressive
-    // disclosure). To get full body, the LLM calls `memory_expand` on the
+    // disclosure). To get full body, the LLM calls memory_expand on the
     // MemWeave MCP server (registered above).
     'experimental.chat.system.transform': async (
       _input: { sessionID?: string; model: Model },
@@ -165,11 +224,11 @@ export const MemweaveInjectPlugin: Plugin = async (ctx) => {
     },
 
     // ── Step 3: on file-touching tool calls, queue file-pack XML ───────────
-    // `tool.execute.before` has no `system` array on its output, so we can't
+    // tool.execute.before has no system array on its output, so we can't
     // push to the system prompt directly. Stash the XML and let the next
-    // `experimental.chat.system.transform` flush it. We deliberately do NOT
+    // experimental.chat.system.transform flush it. We deliberately do NOT
     // mark the memories as injected here (only after they've been pushed to
-    // system) — otherwise the delta pack would skip them on the next
+    // system) -- otherwise the delta pack would skip them on the next
     // system.transform even though the LLM never saw them.
     'tool.execute.before': async (
       input: { tool: string; sessionID: string; callID: string },
