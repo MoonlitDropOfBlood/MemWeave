@@ -1,8 +1,8 @@
 import type { Plugin } from '@opencode-ai/plugin';
 import type { Model } from '@opencode-ai/sdk';
-import { existsSync, readdirSync, statSync } from 'node:fs';
+import { existsSync, readdirSync, statSync, mkdirSync } from 'node:fs';
 import { join, dirname, resolve } from 'node:path';
-import { homedir } from 'node:os';
+import { homedir, tmpdir } from 'node:os';
 import { execSync } from 'node:child_process';
 import { MemweaveInjectClient, type InjectResponse } from './client.js';
 
@@ -65,21 +65,79 @@ function extractFilePaths(args: Record<string, unknown>): string[] {
 }
 
 /**
- * Resolve the absolute path to the installed @mem-weave/mcp package dist,
- * so we can spawn it directly via node instead of npx.
+ * Ensure @mem-weave/mcp is installed at a stable, known location, then
+ * return the absolute path to its `dist/index.js`.
  *
- * Why this exists:
- *   npm 9+ refuses to publish a `bin` field on scoped packages (it gets
- *   silently stripped from the tarball), and `npx @mem-weave/mcp` then
- *   has no command to run: it silently exits. This makes pure-npx
- *   install impossible for our scoped MCP server on Windows + npm 14.
+ * The user installs this plugin via npx. We cannot rely on a sibling
+ * `node_modules/@mem-weave/mcp` directory (it lives in the npx temp
+ * dir, not next to the plugin). We also cannot rely on `npx
+ * @mem-weave/mcp` on Windows + npm 14: scoped packages lose their
+ * `bin` field on publish, so npx has no command to run and silently
+ * exits.
  *
- *   We work around it by spawning `node <absolute dist path>` directly.
+ * Workaround: on first call, run `npm install --prefix <stable dir>
+ * @mem-weave/mcp@<pinned>` to fetch the package and its deps into a
+ * deterministic location. Subsequent calls hit the existing install
+ * (no network, no delay). The install dir is `<tmpdir>/memweave-mcp`,
+ * shared across plugin restarts on the same machine.
  *
- * Search order:
- *   1. Global install: `npm root -g` (recommended for users)
- *   2. npx cache locations under ~/.npm/_npx/<hash>/node_modules/ (transient)
- *   3. The plugin node_modules dir (works if user installed mcp next to the plugin)
+ * The first install takes ~15s while npm fetches the package; later
+ * calls are microseconds. We emit a one-time log so the user knows
+ * what is happening.
+ */
+const MCP_VERSION = '0.2.3';
+let ensurePromise: Promise<string | undefined> | undefined;
+let warned = false;
+
+function mcpInstallDir(): string {
+  return join(tmpdir(), 'memweave-mcp');
+}
+
+function mcpDistPath(): string {
+  return join(mcpInstallDir(), 'node_modules', '@mem-weave', 'mcp', 'dist', 'index.js');
+}
+
+export function ensureMcpInstalled(): Promise<string | undefined> {
+  if (ensurePromise) return ensurePromise;
+  const candidate = mcpDistPath();
+  if (existsSync(candidate)) {
+    ensurePromise = Promise.resolve(candidate);
+    return ensurePromise;
+  }
+  ensurePromise = (async () => {
+    const dest = mcpInstallDir();
+    if (!warned) {
+      warned = true;
+      // eslint-disable-next-line no-console
+      console.warn(
+        `[memweave] @mem-weave/mcp not found locally; installing to ${dest} ` +
+        `(one-time, ~15s). This is needed because npm 14 cannot publish a ` +
+        `bin field on scoped packages, so npx cannot auto-launch the MCP server.`
+      );
+    }
+    try {
+      mkdirSync(dest, { recursive: true });
+      // --silent avoids the noisy "npm notice" output that would pollute
+      // OpenCode's plugin log.
+      execSync(
+        `npm install --prefix "${dest}" --no-audit --no-fund --silent @mem-weave/mcp@${MCP_VERSION}`,
+        { stdio: 'pipe' }
+      );
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error(`[memweave] failed to install @mem-weave/mcp: ${(err as Error).message}`);
+      ensurePromise = undefined; // retry on next call
+      return undefined;
+    }
+    return existsSync(candidate) ? candidate : undefined;
+  })();
+  return ensurePromise;
+}
+
+/**
+ * Resolve the absolute path to the installed @mem-weave/mcp package dist.
+ * Returns synchronously only if the package is already installed; otherwise
+ * the caller should await `ensureMcpInstalled()`.
  */
 export function resolveMcpDistPath(): string | undefined {
   // 1. Global install: most reliable for npm i -g @mem-weave/mcp
@@ -118,31 +176,36 @@ export function resolveMcpDistPath(): string | undefined {
 /**
  * Return the command to launch the MemWeave MCP server.
  *
- * Prefers spawning node with an absolute dist path. Falls back to npx
- * only as a last resort. On Windows with npm 14, npx @mem-weave/mcp
- * silently fails (no bin field on scoped packages), so the absolute
- * path approach is the only reliable way to launch the MCP server.
+ * Strategy: the plugin is installed by OpenCode via npx, so it lives
+ * in a transient cache and has no sibling `node_modules`. We can't
+ * rely on `npx @mem-weave/mcp` either (scoped packages lose their
+ * `bin` field on npm 9+, and npx 14 on Windows silently exits when
+ * there is no command to run).
  *
- * If no path can be resolved, emits a one-time warning telling the
- * user how to install @mem-weave/mcp globally.
+ * The plugin therefore installs @mem-weave/mcp to a stable shared
+ * directory (`<tmpdir>/memweave-mcp`) on first call, then spawns
+ * `node <dist/index.js>` directly. The first call may block for
+ * ~15s while npm downloads the package and its deps; subsequent
+ * calls are synchronous and microsecond-fast.
  *
- * The pluginDir parameter is kept for backward compatibility (the
- * function is exported and referenced in tests).
+ * The install is `fire-and-forget` from the caller's perspective: the
+ * function returns the synchronous `command: string[]` so OpenCode
+ * can `child_process.spawn` it, but we kick off the install in the
+ * background so the next restart finds the dist already on disk.
+ *
+ * The `pluginDir` parameter is kept for backward compatibility with
+ * callers/tests.
  */
-let warned = false;
 export function resolveMcpServerCommand(_pluginDir: string): string[] {
   const distPath = resolveMcpDistPath();
   if (distPath) return ['node', distPath];
-  if (!warned) {
-    warned = true;
-    // eslint-disable-next-line no-console
-    console.warn(
-      '[memweave] @mem-weave/mcp dist not found. OpenCode installed the ' +
-      'plugin via npx, but the MCP server must be installed separately ' +
-      'because npm 14 cannot publish a bin field on scoped packages. ' +
-      'Run: npm i -g @mem-weave/mcp   (one-time, ~1s)'
-    );
-  }
+
+  // Kick off the install in the background. By the time the MCP
+  // server process is started, the install may or may not be done;
+  // either way, the failure mode is "MCP unavailable" not "plugin
+  // crashed", since we still hand OpenCode a valid command.
+  void ensureMcpInstalled();
+
   return ['npx', '--yes', '@mem-weave/mcp'];
 }
 
