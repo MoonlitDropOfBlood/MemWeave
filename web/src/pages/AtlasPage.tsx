@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../api/client';
+import { useLocale } from '../lib/i18n';
 import type { Stats } from '../api/types';
 import { formatRelativeTime, formatStrength } from '../lib/format';
 import styles from './AtlasPage.module.css';
@@ -8,37 +9,38 @@ const ALL_TYPES = ['fact', 'decision', 'preference', 'event', 'project_context',
 const ALL_TIERS = ['short', 'medium', 'long'] as const;
 
 export function AtlasPage() {
+  const { t } = useLocale();
   const { data: stats, isLoading, error } = useQuery<Stats>({
     queryKey: ['stats'],
     queryFn: () => api.get<Stats>('/stats')
   });
 
-  if (isLoading) return <div className={styles.loading}><span className="spinner" /> Loading Atlas…</div>;
-  if (error) return <div className={styles.error}>Failed to load stats: {(error as Error).message}</div>;
+  if (isLoading) return <div className={styles.loading}><span className="spinner" /> {t('atlasPage.loading')}</div>;
+  if (error) return <div className={styles.error}>{t('atlasPage.error')} {(error as Error).message}</div>;
   if (!stats) return null;
 
   return (
     <div className={styles.page}>
       <header className={styles.header}>
-        <h1 className={styles.title}>Atlas</h1>
+        <h1 className={styles.title}>{t('atlasPage.title')}</h1>
         <p className={styles.subtitle}>
-          Memory observatory — strength over time
+          {t('atlasPage.subtitle')}
         </p>
       </header>
 
       <section className={styles.kpiRow}>
-        <KpiCard label="Total memorias" value={stats.totals.memories.toLocaleString()} sub={`${stats.totals.activeMemories} active`} />
-        <KpiCard label="Today: new" value={stats.today.newMemories.toLocaleString()} sub={`${stats.today.promoted} promoted · ${stats.today.evicted} evicted`} />
-        <KpiCard label="Edges" value={stats.totals.edges.toLocaleString()} sub="causal + reference" />
+        <KpiCard label={t('atlasPage.kpi.totalMemories')} value={stats.totals.memories.toLocaleString()} sub={`${stats.totals.activeMemories.toLocaleString()} ${t('atlasPage.kpi.active')}`} />
+        <KpiCard label={t('atlasPage.kpi.todayNew')} value={stats.today.newMemories.toLocaleString()} sub={`${stats.today.promoted} ${t('atlasPage.kpi.promoted')} · ${stats.today.evicted} ${t('atlasPage.kpi.evicted')}`} />
+        <KpiCard label={t('atlasPage.kpi.edges')} value={stats.totals.edges.toLocaleString()} sub={t('atlasPage.kpi.causalAndRef')} />
         <KpiCard
-          label="Last sleep"
+          label={t('atlasPage.kpi.lastSleep')}
           value={stats.lastConsolidation ? formatRelativeTime(stats.lastConsolidation.startedAt) : '—'}
-          sub={stats.lastConsolidation ? stats.lastConsolidation.summary : 'no runs yet'}
+          sub={stats.lastConsolidation ? stats.lastConsolidation.summary : t('atlasPage.kpi.noRuns')}
         />
       </section>
 
       <section className={styles.section}>
-        <h2 className={styles.sectionTitle}>By tier</h2>
+        <h2 className={styles.sectionTitle}>{t('atlasPage.section.byTier')}</h2>
         <div className={styles.barGroup}>
           {ALL_TIERS.map((tier) => (
             <BarRow
@@ -53,7 +55,7 @@ export function AtlasPage() {
       </section>
 
       <section className={styles.section}>
-        <h2 className={styles.sectionTitle}>By type</h2>
+        <h2 className={styles.sectionTitle}>{t('atlasPage.section.byType')}</h2>
         <div className={styles.barGroup}>
           {ALL_TYPES.map((type) => (
             <BarRow
@@ -68,9 +70,9 @@ export function AtlasPage() {
       </section>
 
       <section className={styles.section}>
-        <h2 className={styles.sectionTitle}>Recent projects</h2>
+        <h2 className={styles.sectionTitle}>{t('atlasPage.section.recentProjects')}</h2>
         {stats.recentProjects.length === 0 ? (
-          <p className={styles.empty}>No scoped memorias yet.</p>
+          <p className={styles.empty}>{t('atlasPage.emptyProjects')}</p>
         ) : (
           <div className={styles.projectChips}>
             {stats.recentProjects.map((p) => (

@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { api, qs } from '../api/client';
+import { useLocale } from '../lib/i18n';
 import type { Memory, MemoryListResponse } from '../api/types';
 import { MemoryCard } from '../components/memory/MemoryCard';
 import { TierBadge, TypeBadge } from '../components/common/TypeBadge';
@@ -14,6 +15,7 @@ const ALL_TYPES = ['fact', 'decision', 'preference', 'event', 'project_context',
 const ALL_TIERS = ['short', 'medium', 'long'] as const;
 
 export function MemoriesPage() {
+  const { t } = useLocale();
   const [searchParams, setSearchParams] = useSearchParams();
   const selectedId = searchParams.get('selected');
   const projectFilter = searchParams.get('project') ?? '';
@@ -59,34 +61,34 @@ export function MemoriesPage() {
   return (
     <div className={styles.page}>
       <aside className={styles.filterRail}>
-        <h2 className={styles.filterTitle}>Filters</h2>
+        <h2 className={styles.filterTitle}>{t('memoriesPage.filters')}</h2>
 
-        <FilterGroup title="Type">
-          {ALL_TYPES.map((t) => (
+        <FilterGroup title={t('memoriesPage.filterType')}>
+          {ALL_TYPES.map((typeVal) => (
             <FilterCheckbox
-              key={t}
-              label={t}
-              checked={typeFilter.includes(t)}
-              onChange={() => setFilter('type', t, true)}
+              key={typeVal}
+              label={typeVal}
+              checked={typeFilter.includes(typeVal)}
+              onChange={() => setFilter('type', typeVal, true)}
             />
           ))}
         </FilterGroup>
 
-        <FilterGroup title="Tier">
-          {ALL_TIERS.map((t) => (
+        <FilterGroup title={t('memoriesPage.filterTier')}>
+          {ALL_TIERS.map((tierLabel) => (
             <FilterCheckbox
-              key={t}
-              label={t}
-              checked={tierFilter.includes(t)}
-              onChange={() => setFilter('tier', t, true)}
+              key={tierLabel}
+              label={tierLabel}
+              checked={tierFilter.includes(tierLabel)}
+              onChange={() => setFilter('tier', tierLabel, true)}
             />
           ))}
         </FilterGroup>
 
-        <FilterGroup title="Project">
+        <FilterGroup title={t('memoriesPage.filterProject')}>
           <input
             type="text"
-            placeholder="project value"
+            placeholder={t('memoriesPage.projectPlaceholder')}
             className={styles.filterInput}
             value={projectFilter}
             onChange={(e) => setSearchParams((prev) => {
@@ -100,15 +102,15 @@ export function MemoriesPage() {
 
       <section className={styles.list}>
         {listQuery.isLoading ? (
-          <div className={styles.empty}><span className="spinner" /> Loading…</div>
+          <div className={styles.empty}><span className="spinner" /> {t('memoriesPage.loading')}</div>
         ) : listQuery.error ? (
-          <div className={styles.error}>Failed to load: {(listQuery.error as Error).message}</div>
+          <div className={styles.error}>{t('memoriesPage.error')} {(listQuery.error as Error).message}</div>
         ) : (listQuery.data?.memories.length ?? 0) === 0 ? (
-          <div className={styles.empty}>No memorias match these filters.</div>
+          <div className={styles.empty}>{t('memoriesPage.empty')}</div>
         ) : (
           <>
             <div className={styles.listHeader}>
-              <span>{listQuery.data!.total.toLocaleString()} total</span>
+              <span>{listQuery.data!.total.toLocaleString()} {t('memoriesPage.total')}</span>
             </div>
             {listQuery.data!.memories.map((m) => (
               <MemoryCard
@@ -124,12 +126,12 @@ export function MemoriesPage() {
 
       <aside className={styles.reading}>
         {selectedQuery.isLoading ? (
-          <div className={styles.empty}><span className="spinner" /> Loading…</div>
+          <div className={styles.empty}><span className="spinner" /> {t('memoriesPage.loading')}</div>
         ) : selectedQuery.data ? (
           <ReadingPanel
             memory={selectedQuery.data}
             onForget={() => {
-              if (confirm(`Forget memory "${selectedQuery.data!.title}"?`)) {
+              if (confirm(t('memoriesPage.confirmForget', { title: selectedQuery.data!.title }))) {
                 deleteMutation.mutate(selectedQuery.data!.id);
               }
             }}
@@ -138,7 +140,7 @@ export function MemoriesPage() {
             }}
           />
         ) : (
-          <div className={styles.empty}>Select a memory to read it.</div>
+          <div className={styles.empty}>{t('memoriesPage.selectHint')}</div>
         )}
       </aside>
     </div>
@@ -168,6 +170,7 @@ function ReadingPanel({ memory, onForget, onExpandGraph }: {
   onForget: () => void;
   onExpandGraph: () => void;
 }) {
+  const { t } = useLocale();
   return (
     <article className={styles.readingArticle}>
       <header className={styles.readingHeader}>
@@ -180,31 +183,31 @@ function ReadingPanel({ memory, onForget, onExpandGraph }: {
       </header>
 
       <section className={styles.readingSection}>
-        <h2 className={styles.readingSectionTitle}>Summary</h2>
+        <h2 className={styles.readingSectionTitle}>{t('memoriesPage.reading.summary')}</h2>
         <p>{memory.summary}</p>
       </section>
 
       <section className={styles.readingSection}>
-        <h2 className={styles.readingSectionTitle}>Content</h2>
+        <h2 className={styles.readingSectionTitle}>{t('memoriesPage.reading.content')}</h2>
         <pre className={styles.readingContent}>{memory.content}</pre>
       </section>
 
       <section className={styles.readingSection}>
-        <h2 className={styles.readingSectionTitle}>Properties</h2>
+        <h2 className={styles.readingSectionTitle}>{t('memoriesPage.reading.properties')}</h2>
         <dl className={styles.readingDl}>
-          <dt>Strength</dt><dd><StrengthBar value={memory.strength} /></dd>
-          <dt>importance</dt><dd>{memory.importance}</dd>
-          <dt>confidence</dt><dd>{memory.confidence.toFixed(2)}</dd>
-          <dt>Access count</dt><dd>{memory.accessCount}</dd>
-          <dt>Source</dt><dd>{memory.source}{memory.sourceClient ? ` · ${memory.sourceClient}` : ''}</dd>
-          <dt>Created</dt><dd>{formatDate(memory.createdAt)}</dd>
-          {memory.lastAccessedAt && <><dt>Last accessed</dt><dd>{formatDate(memory.lastAccessedAt)}</dd></>}
+          <dt>{t('memoriesPage.reading.strength')}</dt><dd><StrengthBar value={memory.strength} /></dd>
+          <dt>{t('memoriesPage.reading.importance')}</dt><dd>{memory.importance}</dd>
+          <dt>{t('memoriesPage.reading.confidence')}</dt><dd>{memory.confidence.toFixed(2)}</dd>
+          <dt>{t('memoriesPage.reading.accessCount')}</dt><dd>{memory.accessCount}</dd>
+          <dt>{t('memoriesPage.reading.source')}</dt><dd>{memory.source}{memory.sourceClient ? ` · ${memory.sourceClient}` : ''}</dd>
+          <dt>{t('memoriesPage.reading.created')}</dt><dd>{formatDate(memory.createdAt)}</dd>
+          {memory.lastAccessedAt && <><dt>{t('memoriesPage.reading.lastAccessed')}</dt><dd>{formatDate(memory.lastAccessedAt)}</dd></>}
         </dl>
       </section>
 
       <footer className={styles.readingActions}>
-        <button onClick={onExpandGraph} className={styles.btnSecondary}>Expand graph</button>
-        <button onClick={onForget} className={styles.btnDanger}>Forget</button>
+        <button onClick={onExpandGraph} className={styles.btnSecondary}>{t('memoriesPage.reading.expandGraph')}</button>
+        <button onClick={onForget} className={styles.btnDanger}>{t('memoriesPage.reading.forget')}</button>
       </footer>
     </article>
   );

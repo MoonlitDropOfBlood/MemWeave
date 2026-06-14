@@ -1,11 +1,13 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { api } from '../api/client';
+import { useLocale } from '../lib/i18n';
 import type { Device, DeviceCreateResponse, Settings } from '../api/types';
 import { formatDate } from '../lib/format';
 import styles from './SettingsPage.module.css';
 
 export function SettingsPage() {
+  const { t } = useLocale();
   const settingsQ = useQuery<Settings>({
     queryKey: ['settings'],
     queryFn: () => api.get<Settings>('/settings')
@@ -38,42 +40,42 @@ export function SettingsPage() {
   return (
     <div className={styles.page}>
       <header className={styles.header}>
-        <h1 className={styles.title}>Settings</h1>
-        <p className={styles.subtitle}>Server configuration and registered devices</p>
+        <h1 className={styles.title}>{t('settingsPage.title')}</h1>
+        <p className={styles.subtitle}>{t('settingsPage.subtitle')}</p>
       </header>
 
       <section className={styles.section}>
-        <h2 className={styles.sectionTitle}>Server</h2>
+        <h2 className={styles.sectionTitle}>{t('settingsPage.section.server')}</h2>
         {settingsQ.isLoading ? (
-          <div className={styles.loading}><span className="spinner" /> Loading…</div>
+          <div className={styles.loading}><span className="spinner" /> {t('settingsPage.loading')}</div>
         ) : settingsQ.error ? (
-          <div className={styles.error}>Failed to load: {(settingsQ.error as Error).message}</div>
+          <div className={styles.error}>{t('settingsPage.error')} {(settingsQ.error as Error).message}</div>
         ) : settingsQ.data ? (
           <dl className={styles.dl}>
-            <Row k="Host" v={settingsQ.data.server.host} />
-            <Row k="Port" v={settingsQ.data.server.port.toString()} />
-            <Row k="DB path" v={settingsQ.data.storage.path} mono />
-            <Row k="Embedding provider" v={`${settingsQ.data.embedding.provider} (${settingsQ.data.embedding.model}, ${settingsQ.data.embedding.dimensions}d)`} />
-            <Row k="LLM provider" v={`${settingsQ.data.llm.provider} (${settingsQ.data.llm.model})`} />
-            <Row k="Consolidation" v={settingsQ.data.consolidation.enabled ? `every ${settingsQ.data.consolidation.intervalHours}h` : 'disabled'} />
-            <Row k="Auth required" v={settingsQ.data.auth.requireAuth ? 'yes' : 'no (dev mode)'} />
+            <Row k={t('settingsPage.server.host')} v={settingsQ.data.server.host} />
+            <Row k={t('settingsPage.server.port')} v={settingsQ.data.server.port.toString()} />
+            <Row k={t('settingsPage.server.dbPath')} v={settingsQ.data.storage.path} mono />
+            <Row k={t('settingsPage.server.embedding')} v={`${settingsQ.data.embedding.provider} (${settingsQ.data.embedding.model}, ${settingsQ.data.embedding.dimensions}d)`} />
+            <Row k={t('settingsPage.server.llm')} v={`${settingsQ.data.llm.provider} (${settingsQ.data.llm.model})`} />
+            <Row k={t('settingsPage.server.consolidation')} v={settingsQ.data.consolidation.enabled ? `${t('settingsPage.server.every')} ${settingsQ.data.consolidation.intervalHours}h` : t('settingsPage.server.disabled')} />
+            <Row k={t('settingsPage.server.authRequired')} v={settingsQ.data.auth.requireAuth ? t('settingsPage.server.yes') : t('settingsPage.server.noDevMode')} />
           </dl>
         ) : null}
       </section>
 
       <section className={styles.section}>
         <div className={styles.sectionHeader}>
-          <h2 className={styles.sectionTitle}>Devices</h2>
-          <button className={styles.btnPrimary} onClick={() => setShowDialog(true)}>+ Register device</button>
+          <h2 className={styles.sectionTitle}>{t('settingsPage.section.devices')}</h2>
+          <button className={styles.btnPrimary} onClick={() => setShowDialog(true)}>{t('settingsPage.registerDevice')}</button>
         </div>
         {devicesQ.isLoading ? (
-          <div className={styles.loading}><span className="spinner" /> Loading…</div>
+          <div className={styles.loading}><span className="spinner" /> {t('settingsPage.loading')}</div>
         ) : (devicesQ.data?.devices.length ?? 0) === 0 ? (
-          <div className={styles.empty}>No devices registered yet.</div>
+          <div className={styles.empty}>{t('settingsPage.emptyDevices')}</div>
         ) : (
           <table className={styles.table}>
             <thead>
-              <tr><th>Name</th><th>Type</th><th>Registered</th><th>Last seen</th><th></th></tr>
+              <tr><th>{t('settingsPage.table.name')}</th><th>{t('settingsPage.table.type')}</th><th>{t('settingsPage.table.registered')}</th><th>{t('settingsPage.table.lastSeen')}</th><th></th></tr>
             </thead>
             <tbody>
               {devicesQ.data!.devices.map((d) => (
@@ -86,9 +88,9 @@ export function SettingsPage() {
                     <button
                       className={styles.btnDanger}
                       onClick={() => {
-                        if (confirm(`Revoke device "${d.name}"?`)) revoke.mutate(d.id);
+                        if (confirm(t('settingsPage.confirmRevoke', { name: d.name }))) revoke.mutate(d.id);
                       }}
-                    >Revoke</button>
+                    >{t('settingsPage.revoke')}</button>
                   </td>
                 </tr>
               ))}
@@ -102,13 +104,13 @@ export function SettingsPage() {
           <div className={styles.dialog} onClick={(e) => e.stopPropagation()}>
             {!create.data ? (
               <form onSubmit={onCreate}>
-                <h3 className={styles.dialogTitle}>Register a new device</h3>
+                <h3 className={styles.dialogTitle}>{t('settingsPage.dialog.title')}</h3>
                 <label className={styles.field}>
-                  <span>Name</span>
+                  <span>{t('settingsPage.dialog.name')}</span>
                   <input value={name} onChange={(e) => setName(e.target.value)} placeholder="laptop-1" required />
                 </label>
                 <label className={styles.field}>
-                  <span>Type</span>
+                  <span>{t('settingsPage.dialog.type')}</span>
                   <select value={type} onChange={(e) => setType(e.target.value as typeof type)}>
                     <option value="opencode">opencode</option>
                     <option value="cursor">cursor</option>
@@ -117,18 +119,18 @@ export function SettingsPage() {
                   </select>
                 </label>
                 <div className={styles.dialogActions}>
-                  <button type="button" onClick={() => setShowDialog(false)} className={styles.btnSecondary}>Cancel</button>
+                  <button type="button" onClick={() => setShowDialog(false)} className={styles.btnSecondary}>{t('settingsPage.dialog.cancel')}</button>
                   <button type="submit" className={styles.btnPrimary} disabled={create.isPending}>
-                    {create.isPending ? 'Creating…' : 'Create'}
+                    {create.isPending ? t('settingsPage.dialog.creating') : t('settingsPage.dialog.create')}
                   </button>
                 </div>
               </form>
             ) : (
               <div>
-                <h3 className={styles.dialogTitle}>Device created</h3>
+                <h3 className={styles.dialogTitle}>{t('settingsPage.dialog.created')}</h3>
                 <p className={styles.warning}>{create.data.notice}</p>
                 <label className={styles.field}>
-                  <span>API key (copy now — won't be shown again)</span>
+                  <span>{t('settingsPage.dialog.apiKey')}</span>
                   <input
                     value={create.data.apiKey}
                     readOnly
@@ -140,9 +142,9 @@ export function SettingsPage() {
                     type="button"
                     onClick={() => navigator.clipboard?.writeText(create.data!.apiKey)}
                     className={styles.btnSecondary}
-                  >Copy</button>
+                  >{t('settingsPage.dialog.copy')}</button>
                   <button type="button" onClick={() => { setShowDialog(false); setName(''); create.reset(); }} className={styles.btnPrimary}>
-                    Done
+                    {t('settingsPage.dialog.done')}
                   </button>
                 </div>
               </div>

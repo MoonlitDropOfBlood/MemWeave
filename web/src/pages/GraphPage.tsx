@@ -1,6 +1,7 @@
 import { useParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../api/client';
+import { useLocale } from '../lib/i18n';
 import type { GraphResponse } from '../api/types';
 import { useState } from 'react';
 import { TierBadge, TypeBadge } from '../components/common/TypeBadge';
@@ -21,6 +22,7 @@ const EDGE_COLOR: Record<typeof ALL_EDGE_TYPES[number], string> = {
 };
 
 export function GraphPage() {
+  const { t } = useLocale();
   const { id } = useParams<{ id: string }>();
   const [depth, setDepth] = useState(1);
   const [direction, setDirection] = useState<'in' | 'out' | 'both'>('both');
@@ -46,10 +48,10 @@ export function GraphPage() {
   return (
     <div className={styles.page}>
       <aside className={styles.controls}>
-        <h2 className={styles.controlsTitle}>Filters</h2>
+        <h2 className={styles.controlsTitle}>{t('graphPage.filters')}</h2>
 
         <label className={styles.field}>
-          <span>Depth</span>
+          <span>{t('graphPage.depth')}</span>
           <input
             type="range"
             min={1}
@@ -61,16 +63,16 @@ export function GraphPage() {
         </label>
 
         <label className={styles.field}>
-          <span>Direction</span>
+          <span>{t('graphPage.direction')}</span>
           <select value={direction} onChange={(e) => setDirection(e.target.value as typeof direction)}>
-            <option value="both">both</option>
-            <option value="out">outgoing</option>
-            <option value="in">incoming</option>
+            <option value="both">{t('graphPage.option.both')}</option>
+            <option value="out">{t('graphPage.option.outgoing')}</option>
+            <option value="in">{t('graphPage.option.incoming')}</option>
           </select>
         </label>
 
         <div className={styles.field}>
-          <span>Edge types</span>
+          <span>{t('graphPage.edgeTypes')}</span>
           <div className={styles.edgeTypeList}>
             {ALL_EDGE_TYPES.map((t) => (
               <label key={t} className={styles.edgeType}>
@@ -88,11 +90,11 @@ export function GraphPage() {
 
       <main className={styles.canvas}>
         {graphQ.isLoading ? (
-          <div className={styles.loading}><span className="spinner" /> Loading graph…</div>
+          <div className={styles.loading}><span className="spinner" /> {t('graphPage.loading')}</div>
         ) : graphQ.error ? (
-          <div className={styles.error}>Failed: {(graphQ.error as Error).message}</div>
+          <div className={styles.error}>{t('graphPage.error')} {(graphQ.error as Error).message}</div>
         ) : !graphQ.data || graphQ.data.nodes.length === 0 ? (
-          <div className={styles.empty}>No graph for this memory.</div>
+          <div className={styles.empty}>{t('graphPage.empty')}</div>
         ) : (
           <div className={styles.graphWrap}>
             {graphQ.data.nodes.map((n, i) => {

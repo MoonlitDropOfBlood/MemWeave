@@ -1,7 +1,7 @@
 import Fastify from 'fastify';
 import fastifyStatic from '@fastify/static';
 import { ZodError } from 'zod';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { openDatabase } from '../db/database.js';
@@ -44,8 +44,6 @@ export async function createHttpServer(options: CreateHttpServerOptions) {
     });
   });
 
-  app.get('/api/v1/health', async () => ({ ok: true, service: 'memweave-server' }));
-
   registerMemoriesRoute(app, options.dbPath);
   registerInjectionRoute(app, options.dbPath);
   registerStatsRoute(app, options.dbPath);
@@ -61,6 +59,14 @@ export async function createHttpServer(options: CreateHttpServerOptions) {
   const here = dirname(fileURLToPath(import.meta.url));
   // src/server → ../../ → repo root → dist/web
   const webDist = resolve(here, '../../dist/web');
+
+  // Read version from package.json (at packages/server/package.json)
+  const pkgPath = resolve(here, '../../package.json');
+  const serverVersion = existsSync(pkgPath)
+    ? (JSON.parse(readFileSync(pkgPath, 'utf-8')) as { version?: string }).version ?? '0.0.0'
+    : '0.0.0';
+
+  app.get('/api/v1/health', async () => ({ ok: true, service: 'memweave-server', version: serverVersion }));
 
   if (existsSync(webDist)) {
     await app.register(fastifyStatic, {

@@ -53,6 +53,15 @@ input, textarea, select {
   font-size: inherit;
 }
 
+/* Prevent default-browser flash on select elements */
+select {
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: var(--space-2) var(--space-3);
+}
+
 p {
   margin: 0 0 var(--space-3);
 }

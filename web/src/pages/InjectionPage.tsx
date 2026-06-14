@@ -7,6 +7,7 @@
  */
 import { useState } from 'react';
 import { ApiError, api } from '../api/client';
+import { useLocale } from '../lib/i18n';
 import styles from './InjectionPage.module.css';
 
 interface InjectResponse {
@@ -21,6 +22,7 @@ interface InjectResponse {
 const PHASES = ['session_start', 'prompt_delta', 'file_pack', 'failure_delta'] as const;
 
 export function InjectionPage() {
+  const { t } = useLocale();
   const [phase, setPhase] = useState<typeof PHASES[number]>('prompt_delta');
   const [sessionId, setSessionId] = useState('demo-session');
   const [query, setQuery] = useState('SQLite design');
@@ -50,38 +52,38 @@ export function InjectionPage() {
   return (
     <div className={styles.page}>
       <header className={styles.header}>
-        <h1 className={styles.title}>Injection</h1>
-        <p className={styles.subtitle}>Audit what the agent would see</p>
+        <h1 className={styles.title}>{t('injectionPage.title')}</h1>
+        <p className={styles.subtitle}>{t('injectionPage.subtitle')}</p>
       </header>
 
       <div className={styles.split}>
         <form className={styles.form} onSubmit={onSubmit}>
-          <h2 className={styles.formTitle}>Request a preview</h2>
+          <h2 className={styles.formTitle}>{t('injectionPage.formTitle')}</h2>
 
           <label className={styles.field}>
-            <span>Phase</span>
+            <span>{t('injectionPage.field.phase')}</span>
             <select value={phase} onChange={(e) => setPhase(e.target.value as typeof PHASES[number])}>
               {PHASES.map((p) => <option key={p} value={p}>{p}</option>)}
             </select>
           </label>
 
           <label className={styles.field}>
-            <span>Session ID</span>
+            <span>{t('injectionPage.field.sessionId')}</span>
             <input type="text" value={sessionId} onChange={(e) => setSessionId(e.target.value)} />
           </label>
 
           <label className={styles.field}>
-            <span>Query</span>
+            <span>{t('injectionPage.field.query')}</span>
             <textarea value={query} onChange={(e) => setQuery(e.target.value)} rows={3} />
           </label>
 
           <label className={styles.field}>
-            <span>Files (comma-separated, optional)</span>
+            <span>{t('injectionPage.field.files')}</span>
             <input type="text" value={files} onChange={(e) => setFiles(e.target.value)} />
           </label>
 
           <button type="submit" disabled={loading} className={styles.submit}>
-            {loading ? 'Computing…' : 'Preview injection bundle'}
+            {loading ? t('injectionPage.computing') : t('injectionPage.submit')}
           </button>
 
           {error && <div className={styles.error}>{error}</div>}
@@ -91,17 +93,17 @@ export function InjectionPage() {
           {response ? (
             <>
               <div className={styles.viewerMeta}>
-                <Row k="Bundle ID" v={response.bundleId} />
-                <Row k="Phase" v={response.phase} />
-                <Row k="Content hash" v={response.contentHash} mono />
-                <Row k="Memories" v={response.memoryIds.length.toString()} />
-                <Row k="Estimated tokens" v={response.estimatedTokens.toString()} />
+                <Row k={t('injectionPage.meta.bundleId')} v={response.bundleId} />
+                <Row k={t('injectionPage.meta.phase')} v={response.phase} />
+                <Row k={t('injectionPage.meta.contentHash')} v={response.contentHash} mono />
+                <Row k={t('injectionPage.meta.memories')} v={response.memoryIds.length.toString()} />
+                <Row k={t('injectionPage.meta.estimatedTokens')} v={response.estimatedTokens.toString()} />
               </div>
-              <h3 className={styles.viewerSubTitle}>Context XML</h3>
+              <h3 className={styles.viewerSubTitle}>{t('injectionPage.sectionXml')}</h3>
               <pre className={styles.xml}>{response.contextXml}</pre>
             </>
           ) : (
-            <div className={styles.empty}>Submit the form to preview an injection bundle.</div>
+            <div className={styles.empty}>{t('injectionPage.empty')}</div>
           )}
         </section>
       </div>

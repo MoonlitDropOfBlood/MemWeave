@@ -1,25 +1,36 @@
 import { useEffect, useState } from 'react';
 import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { ApiError, api, qs } from '../../api/client';
+import { useLocale } from '../../lib/i18n';
 import type { MemoryListResponse } from '../../api/types';
 import styles from './AppShell.module.css';
 
 const NAV_ITEMS = [
-  { to: '/atlas', label: 'Atlas' },
-  { to: '/memories', label: 'Memories' },
-  { to: '/injection', label: 'Injection' },
-  { to: '/sleep', label: 'Sleep' },
-  { to: '/settings', label: 'Settings' }
+  { to: '/atlas', key: 'appShell.nav.atlas' },
+  { to: '/memories', key: 'appShell.nav.memories' },
+  { to: '/injection', key: 'appShell.nav.injection' },
+  { to: '/sleep', key: 'appShell.nav.sleep' },
+  { to: '/settings', key: 'appShell.nav.settings' }
 ] as const;
 
 export function AppShell() {
   const navigate = useNavigate();
   const location = useLocation();
+  const { t, locale, setLocale } = useLocale();
+
   const [theme, setTheme] = useState<'light' | 'dark'>(() => {
     const stored = localStorage.getItem('memweave-theme');
     return stored === 'dark' ? 'dark' : 'light';
   });
   const [query, setQuery] = useState('');
+  const [serverVersion, setServerVersion] = useState<string | null>(null);
+
+  // Fetch server version
+  useEffect(() => {
+    api.get<{ version?: string }>('/health').then((h) => {
+      if (h.version) setServerVersion(h.version);
+    }).catch(() => { /* fail-silent */ });
+  }, []);
 
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme);
@@ -32,6 +43,8 @@ export function AppShell() {
       navigate(`/memories?q=${encodeURIComponent(query.trim())}`);
     }
   };
+
+  const toggleLocale = () => setLocale(locale === 'en' ? 'zh' : 'en');
 
   return (
     <div className={styles.shell}>
@@ -46,12 +59,14 @@ export function AppShell() {
                 isActive ? `${styles.navItem} ${styles.navItemActive}` : styles.navItem
               }
             >
-              {item.label}
+              {t(item.key)}
             </NavLink>
           ))}
         </nav>
         <div className={styles.sidebarFooter}>
-          <span className={styles.sidebarVersion}>v0.1.0</span>
+          <span className={styles.sidebarVersion}>
+            {t('appShell.version')}{serverVersion ?? '…'}
+          </span>
         </div>
       </aside>
       <header className={styles.topbar}>
@@ -59,15 +74,22 @@ export function AppShell() {
           <input
             type="search"
             className={styles.search}
-            placeholder="Search memories…"
+            placeholder={t('appShell.searchPlaceholder')}
             value={query}
             onChange={(e) => setQuery(e.target.value)}
           />
         </form>
         <button
+          className={styles.localeToggle}
+          onClick={toggleLocale}
+          aria-label={locale === 'en' ? 'Switch to Chinese' : 'Switch to English'}
+        >
+          {locale === 'en' ? '中' : 'EN'}
+        </button>
+        <button
           className={styles.themeToggle}
           onClick={() => setTheme((t) => (t === 'light' ? 'dark' : 'light'))}
-          aria-label="Toggle theme"
+          aria-label={t('appShell.toggleTheme')}
         >
           {theme === 'light' ? '◐' : '◑'}
         </button>

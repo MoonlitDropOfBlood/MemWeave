@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { RouterProvider } from 'react-router-dom';
 import { router } from './routes';
+import { LocaleProvider } from './lib/i18n';
 import './theme/tokens.css';
 import './theme/global.css';
 
@@ -21,7 +22,9 @@ if (!container) throw new Error('Root element #root not found');
 createRoot(container).render(
   <StrictMode>
     <QueryClientProvider client={queryClient}>
-      <RouterProvider router={router} />
+      <LocaleProvider>
+        <RouterProvider router={router} />
+      </LocaleProvider>
     </QueryClientProvider>
   </StrictMode>
 );
