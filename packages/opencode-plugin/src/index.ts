@@ -112,8 +112,14 @@ export const MemweaveInjectPlugin: Plugin = async (ctx) => {
           MEMWEAVE_URL: API
         },
         enabled: true,
-        // MCP tool calls can be slow on first call (consolidation, search).
-        timeout: 30000
+        // MCP tool calls can be slow on first call:
+        //   - local-xenova needs to load a ~30MB model on cold start
+        //   - consolidation runs the 4-layer search pipeline
+        // The 60s ceiling accommodates the worst-case cold start; subsequent
+        // calls are typically sub-second. Override per-call via
+        // MEMWEAVE_PLUGIN_TIMEOUT (currently unused by MCP path but kept
+        // for symmetry with the inject client).
+        timeout: 60000
       };
     },
 
