@@ -8,6 +8,7 @@
 import { useState } from 'react';
 import { ApiError, api } from '../api/client';
 import { useLocale } from '../lib/i18n';
+import { Dropdown } from '../components/common/Dropdown';
 import styles from './InjectionPage.module.css';
 
 interface InjectResponse {
@@ -62,9 +63,11 @@ export function InjectionPage() {
 
           <label className={styles.field}>
             <span>{t('injectionPage.field.phase')}</span>
-            <select value={phase} onChange={(e) => setPhase(e.target.value as typeof PHASES[number])}>
-              {PHASES.map((p) => <option key={p} value={p}>{p}</option>)}
-            </select>
+            <Dropdown
+              value={phase}
+              onChange={(v) => setPhase(v as typeof PHASES[number])}
+              options={PHASES.map((p) => ({ value: p, label: p }))}
+            />
           </label>
 
           <label className={styles.field}>

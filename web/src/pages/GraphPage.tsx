@@ -5,6 +5,7 @@ import { useLocale } from '../lib/i18n';
 import type { GraphResponse } from '../api/types';
 import { useState } from 'react';
 import { TierBadge, TypeBadge } from '../components/common/TypeBadge';
+import { Dropdown } from '../components/common/Dropdown';
 import styles from './GraphPage.module.css';
 
 const ALL_EDGE_TYPES = ['causes', 'enables', 'contradicts', 'supersedes', 'references', 'related_to', 'before', 'after', 'duplicates', 'refines'] as const;
@@ -64,11 +65,16 @@ export function GraphPage() {
 
         <label className={styles.field}>
           <span>{t('graphPage.direction')}</span>
-          <select value={direction} onChange={(e) => setDirection(e.target.value as typeof direction)}>
-            <option value="both">{t('graphPage.option.both')}</option>
-            <option value="out">{t('graphPage.option.outgoing')}</option>
-            <option value="in">{t('graphPage.option.incoming')}</option>
-          </select>
+          <Dropdown<'in' | 'out' | 'both'>
+            value={direction}
+            onChange={setDirection}
+            size="sm"
+            options={[
+              { value: 'both', label: t('graphPage.option.both') },
+              { value: 'out',  label: t('graphPage.option.outgoing') },
+              { value: 'in',   label: t('graphPage.option.incoming') }
+            ]}
+          />
         </label>
 
         <div className={styles.field}>

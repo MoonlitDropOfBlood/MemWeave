@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { api } from '../api/client';
 import { useLocale } from '../lib/i18n';
+import { Dropdown } from '../components/common/Dropdown';
 import type { Device, DeviceCreateResponse, Settings } from '../api/types';
 import { formatDate } from '../lib/format';
 import styles from './SettingsPage.module.css';
@@ -111,12 +112,17 @@ export function SettingsPage() {
                 </label>
                 <label className={styles.field}>
                   <span>{t('settingsPage.dialog.type')}</span>
-                  <select value={type} onChange={(e) => setType(e.target.value as typeof type)}>
-                    <option value="opencode">opencode</option>
-                    <option value="cursor">cursor</option>
-                    <option value="claude_code">claude_code</option>
-                    <option value="rest">rest</option>
-                  </select>
+                  <Dropdown
+                    value={type}
+                    onChange={(v) => setType(v as typeof type)}
+                    size="sm"
+                    options={[
+                      { value: 'opencode',    label: 'opencode' },
+                      { value: 'cursor',      label: 'cursor' },
+                      { value: 'claude_code', label: 'claude_code' },
+                      { value: 'rest',        label: 'rest' }
+                    ]}
+                  />
                 </label>
                 <div className={styles.dialogActions}>
                   <button type="button" onClick={() => setShowDialog(false)} className={styles.btnSecondary}>{t('settingsPage.dialog.cancel')}</button>
