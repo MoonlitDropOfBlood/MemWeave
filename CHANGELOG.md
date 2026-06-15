@@ -7,13 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Published packages (since v0.2.0):
 
-- [`@mem-weave/server`](https://www.npmjs.com/package/@mem-weave/server) — Fastify + SQLite server + CLI
-- [`@mem-weave/mcp`](https://www.npmjs.com/package/@mem-weave/mcp) — stdio MCP server (10 `memory_*` tools)
-- [`@mem-weave/opencode-plugin`](https://www.npmjs.com/package/@mem-weave/opencode-plugin) — OpenCode plugin (auto-injection + auto MCP registration)
+- [`@mem-weave/server`](https://www.npmjs.com/package/@mem-weave/server) — Fastify + SQLite server + CLI + **embedded MCP** at `/mcp` (Streamable HTTP) + 10 `memory_*` tools
+- [`@mem-weave/opencode-plugin`](https://www.npmjs.com/package/@mem-weave/opencode-plugin) — OpenCode plugin (auto-injection + auto MCP registration + **write-side closure**)
+
+> **Note**: the standalone `@mem-weave/mcp` package was retired in v0.4.0.
+> The MCP server is now embedded in `@mem-weave/server` and exposed at
+> `/mcp` over Streamable HTTP — no separate package to install.
 
 Tags next to a bullet name the affected package(s) when only a subset of the
-three changed: `[server]`, `[mcp]`, `[opencode-plugin]`. Untagged bullets
-touch all three (or core/shared infrastructure).
+two changed: `[server]`, `[opencode-plugin]`. Untagged bullets
+touch both (or core/shared infrastructure).
 
 ---
 
@@ -22,6 +25,137 @@ touch all three (or core/shared infrastructure).
 _No changes yet._
 
 ---
+
+## [0.5.0] — 2026-06-15
+
+### Breaking changes
+
+- **[server] Standalone `@mem-weave/mcp` package retired.** The MCP
+  server is now embedded inside `@mem-weave/server` and exposed at
+  `/mcp` over Streamable HTTP (MCP 2025-03-26). Users no longer
+  install a separate MCP package; clients point at the running
+  server's `/mcp` endpoint. The old `@mem-weave/mcp` package was
+  unpublished from npm.
+- **[opencode-plugin] `mcp.memweave` is now force-injected.** The
+  plugin's `config` hook overwrites any user-supplied `mcp.memweave`
+  entry. Users no longer hand-edit `~/.config/opencode/opencode.json`
+  to add an `mcp` block — the plugin does it on every OpenCode boot.
+  Other MCP servers in the `mcp` block are preserved.
+
+### Added
+
+- **[server] `POST /api/v1/sessions`** (`packages/server/src/rest/routes/sessions.ts`).
+  Idempotent on `sessionId`: returns `201 + { created: true }` the first
+  time, `200 + { created: false }` thereafter. Body:
+  `{ sessionId, source: "opencode"|"cursor"|"claude_code"|"rest_api", title, deviceId? }`.
+  Lets the OpenCode plugin (and any other client) safely retry a session
+  upsert without growing duplicates.
+- **[server] `POST /api/v1/observations`** (`packages/server/src/rest/routes/observations.ts`).
+  Idempotent on `(sessionId, messageId)`. Body:
+  `{ sessionId, messageId, hookType: "chat.user"|"chat.assistant"|"chat.tool", text, toolName?, toolInput?, toolOutput? }`.
+  `messageId` is stashed in the existing `tool_input` column as a JSON
+  envelope (`{ "messageId": "...", "toolName": "..." }`) so the lookup
+  can use a deterministic `LIKE '%"messageId":"..."%'` — no schema
+  migration needed. The chat body lives in `tool_output`.
+- **[server] `SessionRepo.findOrCreate()`** and **`ObservationRepo.createOrGetByMessageId()`**
+  (idempotency helpers). The latter is backed by a new
+  `findByMessageId()` method that does the LIKE search; no new
+  index required.
+- **[opencode-plugin] `event` hook closes the write loop.** The
+  plugin now listens to OpenCode's `message.updated` event bus,
+  reverse-queries the OpenCode SDK (`input.client.session.messages`)
+  for the full `Part[]` text of the message, and POSTs both a session
+  upsert and an observation upsert to the server. Every completed
+  user + assistant turn lands in `observations` automatically.
+  High-signal observations are promoted to long-term memories by the
+  consolidation worker on its next tick.
+- **[opencode-plugin] `MemweaveInjectClient.reportSession()` and
+  `reportObservation()`** (`packages/opencode-plugin/src/client.ts`).
+  Plain `fetch` wrappers with the same `AbortSignal.timeout` as
+  `requestInjection()`. No new error type — failures fall through to
+  the plugin's `try/catch` and silently no-op.
+- **[opencode-plugin] `config` hook force-injects the remote MCP**
+  (`packages/opencode-plugin/src/index.ts`). The plugin captures the
+  host OpenCode's `client` from `PluginInput` and uses it both to
+  force-register `mcp.memweave = { type: "remote", url: MEMWEAVE_URL
+  + "/mcp", enabled: true }` and to reverse-query session messages
+  in the `event` hook.
+
+### Changed
+
+- **[server] README rewritten for v0.5.** Both `README.md` (Chinese) and
+  `README.en.md` (English) now document: the `npx`-based and global
+  install paths side-by-side, the new `Start-Process -WindowStyle Hidden
+  memweave start` for Windows background, the obsolete-package warning
+  about `@mem-weave/mcp`, and the opencode.json snippet reduced to just
+  `"plugin": ["@mem-weave/opencode-plugin"]` (the `mcp` block is now
+  plugin-managed).
+- **[server] `packages/server/README.md` and `packages/server/README.en.md`**
+  also updated. `scripts/publish.mjs` ships `README.md` + `README.en.md`
+  inside the npm tarball so users discover the docs after `npm i`.
+
+### Fixed
+
+- **[server] Global `application/json` content-type parser regression
+  (`packages/server/src/server/http.ts`)** — the MCP permissive
+  parser previously installed at the Fastify level (so the `/mcp`
+  bridge could accept NDJSON) was clobbering the default JSON parser
+  for **all** REST routes, so Zod validation saw `string` instead of
+  `object` for every `POST` body. The MCP handler now reads
+  `req.raw` directly; the global parser is back to the Fastify
+  default, and the regression is gone.
+
+### Internal
+
+- End-to-end verified by importing the **real compiled**
+  `dist/index.js` of `@mem-weave/opencode-plugin@0.4.0` and driving
+  it with a mock OpenCode SDK client that emits
+  `message.updated` events. The plugin's `event` hook
+  successfully POSTs `POST /api/v1/sessions` and
+  `POST /api/v1/observations`; rows appear in the SQLite
+  `observations` and `sessions` tables. Idempotency verified by
+  re-firing the same `message.updated` event and confirming no
+  duplicate row is created.
+
+---
+
+## [0.4.0] — 2026-06-15
+
+### Added — [@mem-weave/opencode-plugin]
+
+- **MCP server embedded in `@mem-weave/server` (Streamable HTTP).** The
+  old `@mem-weave/mcp` npm package (10 `memory_*` tools over stdio)
+  was **unpublished** in favour of an in-process MCP server exposed
+  at `POST/GET/DELETE /mcp` (Streamable HTTP, MCP 2025-03-26 spec).
+  Any client that supports Streamable HTTP can now connect to the
+  running server with no separate install.
+- **`config` hook force-injects `mcp.memweave = { type: "remote", url,
+  enabled }`**. The plugin no longer relies on the user hand-editing
+  `~/.config/opencode/opencode.json` to wire up the MCP endpoint —
+  it does it on every OpenCode boot.
+- **`@modelcontextprotocol/sdk@^1.29.0` added as a runtime
+  dependency of `@mem-weave/server`**.
+
+---
+
+## [0.3.0] — 2026-06-14
+
+### Added
+
+- **[server] Web UI bundled into the npm tarball.** `scripts/publish.mjs`
+  runs `npm run web:build` and copies `dist/web/` into
+  `packages/server/dist/web/`, so `npm install -g @mem-weave/server`
+  gives you the full "Calm Memory Atlas" UI on `/ui/` without a
+  separate clone.
+- **[opencode-plugin] Auto-install of the (since-retired) `@mem-weave/mcp`
+  package** on first run, via `npm install --prefix <tmpdir>/memweave-mcp`.
+  Removed in v0.4.0 when the standalone MCP package was retired.
+- **[opencode-plugin] Plugin self-installs mcp to `<tmpdir>/memweave-mcp`
+  on first use.** Removed in v0.4.0 for the same reason.
+
+---
+
+## [0.2.0] — 2026-06-13
 
 ## [0.2.0] — 2026-06-13
 

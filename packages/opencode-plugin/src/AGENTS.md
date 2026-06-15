@@ -1,69 +1,96 @@
-# src/plugin/
+# src/
 
-**OpenCode 插件。自动注入摘要式记忆到 system prompt，并通过 `config` 钩子把 MemWeave 自带 MCP server 注册进 OpenCode，从而闭环渐进披露。**
+**OpenCode plugin for `@mem-weave/opencode-plugin`. Closes the read loop (auto-injection of summary-only XML) and the write loop (auto-upsert of every chat message back to the MemWeave server). Also auto-registers the MemWeave MCP endpoint as `mcp.memweave` so the 10 `memory_*` tools are immediately available without hand-editing `opencode.json`.**
 
 ## OVERVIEW
 
-`MemweaveInjectPlugin` 在 `~/.config/opencode/opencode.json` 注册后跑在 OpenCode 进程里。它做三件事：
+`MemweaveInjectPlugin` runs inside the OpenCode process. On every OpenCode boot
+it does four things, in order:
 
-1. **`config` 钩子** —— 把 MemWeave 自己的 MCP server（`src/mcp/index.ts`，10 个工具）注册成 OpenCode 的本地 MCP，LLM 立刻能调 `memory_expand` / `memory_smart_search` / `memory_graph_query` 等。
-2. **`experimental.chat.system.transform` 钩子** —— 把服务端返回的 `<memory-context>` XML 追加到 system prompt。XML 只含 `<title>` + `<summary>`（**渐进披露**）。
-3. **`tool.execute.before` 钩子** —— 文件读写类工具调用前，请求 file_pack 阶段的注入 XML，缓存到 pending 队列，下次 system.transform 一并追加。
+1. **`config` hook** — force-injects `mcp.memweave = { type: "remote", url,
+   enabled: true }` into OpenCode's in-memory config. The 10 `memory_*` MCP
+   tools become available to the LLM automatically. Any other MCP servers
+   in the `mcp` block are preserved.
+2. **`experimental.chat.system.transform` hook** — calls the server's
+   `/api/v1/inject` endpoint to fetch a token-budgeted XML pack of
+   relevant memories, appends it to the system prompt. The XML only
+   contains `<title>` + `<summary>` (progressive disclosure).
+3. **`tool.execute.before` hook** — when the LLM calls a file-touching
+   tool (`Read` / `Edit` / `Write` / `Glob` / `Grep`), requests a
+   `file_pack` of file-related memories and queues the XML for the
+   next `system.transform` to flush.
+4. **`event` hook (v0.4+)** — listens to OpenCode's `message.updated`
+   event bus. For every completed user/assistant message, reverse-queries
+   the OpenCode SDK (`input.client.session.messages`) for the full
+   `Part[]` text, then POSTs both `/api/v1/sessions` and
+   `/api/v1/observations` to the server. Idempotent on `(sessionId,
+   messageId)` — message replay on OpenCode restart does not duplicate.
 
-**为什么这能闭环渐进披露**：
-
-```
-[config 钩子] MemWeave MCP server 注册
-              ↓
-[LLM 启动] 自动看到 10 个 memory_* 工具
-              ↓
-[system.transform] 注入 12 条 memory 的 summary（不含 content）
-              ↓
-[LLM 觉得 "m_abc 这条相关"] → 调 memory_expand({memoryId: "m_abc"})
-              ↓
-[MCP server] 返回完整 record（含 content）
-              ↓
-[LLM 拿到全文] → 真正"读了"那条记忆
-```
-
-**关键设计点**：**不**在 plugin 里写自定义 `tool()` 定义 —— MCP server 已经有 10 个工具，`config` 钩子直接复用，零重复。
+This is the **write-side closure**: without the `event` hook the
+system would be read-only from the agent's perspective — high-signal
+LLM turns would never become long-term memories.
 
 ## STRUCTURE
 
 ```
-src/plugin/
-├── index.ts          # MemweaveInjectPlugin 主文件（config + 两个 hook）
-└── client.ts         # MemweaveInjectClient —— POST /api/v1/inject
+src/
+├── index.ts          # MemweaveInjectPlugin main file (4 hooks)
+└── client.ts         # MemweaveInjectClient — POST /api/v1/{inject,sessions,observations}
 ```
 
 ## WHERE TO LOOK
 
-| Symbol | File | 作用 |
+| Symbol | File | Role |
 |---|---|---|
-| `MemweaveInjectPlugin` | `index.ts` | 插件默认导出；返回 `{ config, 'experimental.chat.system.transform', 'tool.execute.before' }` |
-| `resolveMcpServerCommand(pluginDir)` | `index.ts` | 把 `<repo>/src/mcp/index.ts` 解析成 `npx tsx` 命令 |
-| `MEMWEAVE_URL` | 环境变量 | 服务端 base URL（默认 `http://127.0.0.1:3131`） |
-| `MEMWEAVE_PLUGIN_TIMEOUT` | 硬编码 | 10s per inject request |
-| `MemweaveInjectClient` | `client.ts` | HTTP 客户端，POST `/api/v1/inject` 拿 contextXml |
+| `MemweaveInjectPlugin` | `index.ts` | Plugin default export; returns `{ config, event, 'experimental.chat.system.transform', 'tool.execute.before' }` |
+| `API` / `TIMEOUT` | `index.ts` (top-level constants) | `MEMWEAVE_URL` (default `http://127.0.0.1:3131`) + `MEMWEAVE_PLUGIN_TIMEOUT` (default 10s) |
+| `INJECTED_CACHE` / `PENDING_FILE_PACKS` | `index.ts` (module scope) | Per-session caches; swept every hour to prevent leaks |
+| `FILE_TOOLS` | `index.ts` | `{Read, Edit, Write, Glob, Grep}` — tools that trigger file_pack injection |
+| `MemweaveInjectClient` | `client.ts` | HTTP client with `requestInjection()` + `reportSession()` + `reportObservation()` |
 
 ## CONVENTIONS
 
-- **Fail-silent**: 所有网络调用都包在 try/catch，MemWeave 不可用绝不打断 OpenCode。
-- **`config` 钩子只动 `config.mcp`**，不碰 `config.agent` / `config.command` / `config.provider`。
-- **MCP 启动走 `npx --yes tsx <entry>`** —— 不引入新的 bin 依赖；`tsx` 已在 devDependencies。
-- **`file_pack` 不污染 `INJECTED_CACHE`**: XML 还没真追加到 system prompt 前，不能把 memoryIds 加进 `sessionInjected`，否则下次的 prompt_delta 会跳过它们。
-- **三类注入阶段**:
-  1. `session_start` —— `experimental.chat.system.transform` 第一次触发；服务端返回稳定 long-term pack。
-  2. `prompt_delta` —— 同上但已注入过；只追加增量。
-  3. `file_pack` —— `tool.execute.before` 触发；XML 缓存到 pending 队列，下一次 system.transform 追加。
+- **Fail-silent**: every network call is wrapped in `try/catch`. A
+  MemWeave outage must never break the OpenCode agent.
+- **`config` hook only touches `config.mcp`**. Never `config.agent`,
+  `config.command`, `config.provider`. Other MCP servers in the
+  `mcp` block are preserved; only `mcp.memweave` is overwritten.
+- **`event` hook reverse-queries the OpenCode SDK** via the host-provided
+  `input.client`. We don't keep a separate connection — the plugin
+  uses whatever OpenCode gave it.
+- **`file_pack` does NOT pollute `INJECTED_CACHE`**: the XML hasn't
+  been pushed to the system prompt yet when `tool.execute.before`
+  runs, so the memory ids go into `PENDING_FILE_PACKS` and only get
+  added to `INJECTED_CACHE` after `system.transform` actually flushes
+  them. Otherwise the next `prompt_delta` would skip them even though
+  the LLM never saw them.
+- **Idempotent session/observation upsert**: the server returns
+  `200 + { created: false }` on duplicates. The plugin does not
+  need to maintain its own dedup state.
 
 ## ANTI-PATTERNS
 
-- **NEVER** 引入 `import from './tools.js'` 之类的自定义 tool 实现 —— 用 `config` 钩子把 MCP server 注册进去。重复实现是技术债。
-- **NEVER** import from `src/server/`, `src/db/`, `src/retrieval/`. 插件是独立进程。
-- **NEVER** rethrow 网络错误。`config` 钩子失败 → OpenCode 启动失败；MCP 启动失败 → LLM 没工具，但 server-side injection 仍能跑。
-- **NEVER** 在 `tool.execute.before` 里就把 `response.memoryIds` 加进 `INJECTED_CACHE` —— XML 还没到 system prompt。
+- **NEVER** spawn child processes from the plugin. The plugin is
+  in-process — all communication goes through HTTP to the server.
+- **NEVER** import from `packages/server/src/`. The plugin is its own
+  package; the only server contract is the HTTP API.
+- **NEVER** add a rethrow path. `config` hook failure breaks OpenCode
+  startup; `event` hook failure means one observation is lost — neither
+  is fatal, both must be swallowed.
+- **NEVER** cache the message text in `INJECTED_CACHE` before the
+  matching `system.transform` has flushed the XML. The plugin must
+  wait for the next prompt to actually push the file_pack XML before
+  it considers those memories "seen".
+- **NEVER** import `Message | AssistantMessage` directly — use the
+  OpenCode SDK types from `@opencode-ai/plugin`. The host OpenCode
+  process defines what shape the messages take.
 
-## 适配范围
+## COMPATIBILITY
 
-本插件只适配 **OpenCode 最新版**（`@opencode-ai/plugin` ≥ 1.17.x）。`experimental.chat.system.transform` / `tool.execute.before` / `config` 钩子均按当前类型契约使用，行为在最新 OpenCode 上验证。
+- Targets `@opencode-ai/plugin` ≥ 1.17.x.
+- `EventMessageUpdated` and `MessagePartUpdated` are stable since
+  OpenCode 1.17. We use `message.updated` (not `message.part.updated`)
+  to avoid high-frequency stream events.
+- The `chat.message` hook is **not** used (it only sees UserMessage,
+  not AssistantMessage). The plugin therefore uses `event` hook for
+  symmetric handling of both user + assistant messages.
