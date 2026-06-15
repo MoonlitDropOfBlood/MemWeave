@@ -102,7 +102,12 @@ OpenCode client — edit `~/.config/opencode/opencode.json`:
 }
 ```
 
-> The plugin only injects summaries into the system prompt. The MCP tools (`memory_save` / `memory_recall` / `memory_expand` …) are provided by the built-in `/mcp` endpoint inside `@mem-weave/server`. OpenCode reaches them via the `mcp` block above.
+> **The `mcp` block must be hand-edited once.** OpenCode does NOT call a
+> `config` hook from plugins (see the [OpenCode plugins docs](https://opencode.ai/docs/plugins/),
+> which does not list `config` among the available hooks), so the plugin
+> cannot register `mcp.memweave` for you. After you add it, plugin 0.4.1
+> will stop emitting the "memweave MCP not auto-registered" warning at
+> boot.
 
 ### Option B — npx try-out (no install)
 
@@ -282,13 +287,13 @@ All tools call the server's REST API through `MemweaveClient`. Override the serv
 
 ---
 
-## OpenCode plugin (auto-injection + auto-write)
+## OpenCode plugin (auto-injection + auto-write + write-side closure)
 
 `@mem-weave/opencode-plugin` ships an OpenCode plugin called `MemweaveInjectPlugin` that closes the **read and write loop** with the MemWeave server:
 
 1. **Read side** — automatically injects relevant memory summaries into the system prompt (LLM doesn't have to call any tool to see context).
 2. **Write side (v0.4+)** — listens to OpenCode's `message.updated` event and pushes every completed user + assistant message to the server as a Session + Observation. The consolidation worker promotes high-signal observations into long-term memories on the next tick.
-3. **MCP registration** — on every OpenCode boot the plugin's `config` hook force-injects `mcp.memweave = { type: "remote", url: "http://127.0.0.1:3131/mcp", enabled: true }` so the 10 `memory_*` MCP tools are immediately available — **no `mcp` block to hand-edit**.
+3. **MCP endpoint** — the 10 `memory_*` tools come from `@mem-weave/server`'s built-in `/mcp` (Streamable HTTP). They are reached via the `mcp.memweave` block that **you must hand-add once** to `~/.config/opencode/opencode.json` — OpenCode does NOT call a `config` hook from plugins, so the plugin cannot auto-register this for you.
 
 **Enable it:**
 
@@ -298,20 +303,31 @@ npm install -g @mem-weave/opencode-plugin
 
 Then in `~/.config/opencode/opencode.json`:
 
-```json
+```jsonc
 {
-  "plugin": ["@mem-weave/opencode-plugin"]
+  "plugin": ["@mem-weave/opencode-plugin"],
+  "mcp": {
+    "memweave": {
+      "type": "remote",
+      "url": "http://127.0.0.1:3131/mcp",
+      "enabled": true
+    }
+  }
 }
 ```
 
-> You do NOT need to write an `mcp` block — the plugin auto-registers `mcp.memweave` at boot. Any other MCP servers you configure are left untouched.
+> **The `mcp` block is required.** OpenCode does not call a plugin `config`
+> hook (see the [plugins docs](https://opencode.ai/docs/plugins/)) so the
+> plugin cannot register `mcp.memweave` for you. If it's missing, plugin
+> 0.4.1 logs a warning at boot via `client.app.log`; the LLM will then see
+> `MCP error -32000: Connection closed` whenever it tries to call a
+> `memory_*` tool.
 
-**What it does (hooks):**
+**What it does (hooks actually called by OpenCode):**
 
-1. `config` — force-injects `mcp.memweave = { type: "remote", url: ${MEMWEAVE_URL}/mcp, enabled: true }`. Overwrites any prior `mcp.memweave` so the stack always points at the server the plugin targets.
+1. `event` (v0.4+) — on `message.updated`, reverse-queries the OpenCode SDK for the message's `Part[]` text, then `POST /api/v1/sessions` + `POST /api/v1/observations` on the server (both idempotent on `(sessionId, messageId)`).
 2. `experimental.chat.system.transform` — asks the server for a `session_start` / `prompt_delta` context pack (based on session ID, user identity, tenant) and appends it to the system prompt.
 3. `tool.execute.before` — on file-reading tool calls (`Read` / `Edit` / `Write` / `Glob` / `Grep`), extracts file paths and requests a `file_pack` of file-related memories.
-4. `event` (v0.4+) — on `message.updated`, reverse-queries OpenCode SDK for the message's `Part[]`, then `POST /api/v1/sessions` + `POST /api/v1/observations` on the server (both idempotent on `(sessionId, messageId)`).
 
 **Write-side data flow:**
 

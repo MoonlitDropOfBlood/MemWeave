@@ -26,6 +26,48 @@ _No changes yet._
 
 ---
 
+## [0.4.1] — 2026-06-15
+
+### Fixed — [@mem-weave/opencode-plugin]
+
+- **The plugin's `config` hook was dead code.** OpenCode's documented
+  plugin hooks ([opencode.ai/docs/plugins/](https://opencode.ai/docs/plugins/))
+  do NOT include `config` — only `event`, `tool.execute.before` /
+  `after`, `command.executed`, `shell.env`, `tool` (custom tool), and
+  `experimental.session.compacting`. The `Hooks.config` field exists in
+  the `@opencode-ai/plugin` types but is never invoked by the runtime.
+  As a result, the v0.4.0 "force-inject `mcp.memweave = remote`"
+  behavior never actually mutated OpenCode's config, and OpenCode
+  reported `server unavailable key=memweave type=local status=failed`
+  because it tried to spawn the plugin as a stdio MCP server (it has
+  no `bin` field).
+- **Plugin now warns at boot** via `client.app.log({ level: 'warn' })`
+  if the user has not added the `mcp.memweave` block to
+  `~/.config/opencode/opencode.json`. The warning includes the exact
+  JSON snippet to add.
+- **The plugin no longer tries to write `mcp.memweave` from a `config`
+  hook** — that hook is no longer exported from the plugin. Users
+  MUST hand-add the `mcp` block to `opencode.json` (this is the same
+  workflow the README documents).
+
+### Migration from v0.4.0
+
+No code changes are required from users who already have `mcp.memweave`
+in `opencode.json`. Users who relied on the (non-functional) v0.4.0
+"auto-inject" promise need to hand-add the `mcp` block once:
+
+```jsonc
+"mcp": {
+  "memweave": {
+    "type": "remote",
+    "url": "http://127.0.0.1:3131/mcp",
+    "enabled": true
+  }
+}
+```
+
+---
+
 ## [0.5.0] — 2026-06-15
 
 ### Breaking changes

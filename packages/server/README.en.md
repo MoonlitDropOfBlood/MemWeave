@@ -282,9 +282,13 @@ All tools call the server's REST API through `MemweaveClient`. Override the serv
 
 ---
 
-## OpenCode plugin (auto-injection)
+## OpenCode plugin (auto-injection + auto-write)
 
-`@mem-weave/opencode-plugin` ships an OpenCode plugin called `MemweaveInjectPlugin` that **automatically injects relevant memory** into the prompt sent to the LLM — the agent doesn't have to call any tool.
+`@mem-weave/opencode-plugin` ships an OpenCode plugin called `MemweaveInjectPlugin` that closes the **read and write loop** with the MemWeave server:
+
+1. **Read side** — automatically injects relevant memory summaries into the system prompt (LLM doesn't have to call any tool to see context).
+2. **Write side (v0.4+)** — listens to OpenCode's `message.updated` event and pushes every completed user + assistant message to the server as a Session + Observation. The consolidation worker promotes high-signal observations into long-term memories on the next tick.
+3. **MCP registration** — on every OpenCode boot the plugin's `config` hook force-injects `mcp.memweave = { type: "remote", url: "http://127.0.0.1:3131/mcp", enabled: true }` so the 10 `memory_*` MCP tools are immediately available — **no `mcp` block to hand-edit**.
 
 **Enable it:**
 
@@ -296,15 +300,34 @@ Then in `~/.config/opencode/opencode.json`:
 
 ```json
 {
-  "plugins": ["@mem-weave/opencode-plugin"]
+  "plugin": ["@mem-weave/opencode-plugin"]
 }
 ```
 
-**What it does:**
+> You do NOT need to write an `mcp` block — the plugin auto-registers `mcp.memweave` at boot. Any other MCP servers you configure are left untouched.
 
-1. **At session start** — hooks `experimental.chat.system.transform`, asks the server to produce a `session_start` context pack (based on session ID, user identity, tenant), and appends it to the end of the system prompt.
-2. **After every new prompt** — switches phase to `prompt_delta` and only appends incremental memories, avoiding duplicates.
-3. **On file-reading tool calls** (`Read` / `Edit` / `Write` / `Glob` / `Grep`) — hooks `tool.execute.before`, extracts file paths from args, and requests a `file_pack` of file-related memories.
+**What it does (hooks):**
+
+1. `config` — force-injects `mcp.memweave = { type: "remote", url: ${MEMWEAVE_URL}/mcp, enabled: true }`. Overwrites any prior `mcp.memweave` so the stack always points at the server the plugin targets.
+2. `experimental.chat.system.transform` — asks the server for a `session_start` / `prompt_delta` context pack (based on session ID, user identity, tenant) and appends it to the system prompt.
+3. `tool.execute.before` — on file-reading tool calls (`Read` / `Edit` / `Write` / `Glob` / `Grep`), extracts file paths and requests a `file_pack` of file-related memories.
+4. `event` (v0.4+) — on `message.updated`, reverse-queries OpenCode SDK for the message's `Part[]`, then `POST /api/v1/sessions` + `POST /api/v1/observations` on the server (both idempotent on `(sessionId, messageId)`).
+
+**Write-side data flow:**
+
+```
+OpenCode  user message complete
+   ↓
+Plugin  event hook fires → OpenCode SDK reverse query → text + messageId
+   ↓
+Plugin  POST /api/v1/sessions     → server upserts session
+         POST /api/v1/observations → server upserts observation
+                                    (tool_output = text, tool_input = JSON{messageId})
+   ↓
+Server  consolidation worker (every 6h) → promotes high-signal observations to memory
+   ↓
+Next system.transform injection  → LLM sees summary → calls memory_expand for detail
+```
 
 **Injection format** — the server returns `contextXml` like:
 

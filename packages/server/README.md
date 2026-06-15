@@ -269,13 +269,14 @@ OpenCode 配置（`~/.config/opencode/opencode.json` 的 `mcp` 段）：
 
 ---
 
-## OpenCode 插件（自动注入安装）
+## OpenCode 插件（自动注入 + 自动写入）
 
-插件 `@mem-weave/opencode-plugin` 安装后只做一件事：
+插件 `@mem-weave/opencode-plugin` 安装后做两件事（v0.4+）：
 
 1. **注入记忆** — 每次对话/读文件时，把相关记忆的摘要追加到 system prompt，无需 LLM 主动调工具
+2. **写侧闭环（v0.4 新增）** — 监听 OpenCode 的 `message.updated` 事件，把每条完成的 user / assistant 消息自动上报到 `@mem-weave/server` 写进 `observations` 表（**幂等**：重复消息不会被重复写）
 
-MCP 工具（`memory_save` / `memory_recall` / `memory_expand` 等）由 `@mem-weave/server` 内置的 `/mcp` 端点统一提供，OpenCode 通过 `mcp` 段远程连接。无需 plugin 帮忙。
+MCP 工具（`memory_save` / `memory_recall` / `memory_expand` 等）由 `@mem-weave/server` 内置的 `/mcp` 端点统一提供，OpenCode 通过 plugin 的 `config` 钩子自动注册到 `mcp.memweave` 段（**无需手填**）。
 
 **启用方式：**
 
@@ -287,8 +288,25 @@ npm install -g @mem-weave/opencode-plugin
 
 ```json
 {
-  "plugins": ["@mem-weave/opencode-plugin"]
+  "plugin": ["@mem-weave/opencode-plugin"]
 }
+```
+
+> **无需**手填 `mcp` 段 —— plugin 启动时会**强制注入** `mcp.memweave = { type: "remote", url: "http://127.0.0.1:3131/mcp", enabled: true }`。其他 MCP server 不受影响。
+
+**写侧闭环数据流：**
+
+```
+[OpenCode] user 提完问 → message.updated 事件
+   ↓
+[Plugin] event hook 触发 → OpenCode SDK 反查 → 拿 messageId + text
+   ↓
+[Plugin] POST /api/v1/sessions    → server 幂等建 session
+[Plugin] POST /api/v1/observations → server 幂等写 observation (tool_output=text, tool_input=JSON{messageId})
+   ↓
+[Server] consolidation worker 周期跑 → 按规则把高质量 observation 升级成 memory
+   ↓
+[Server] 下次 system.transform 注入 → LLM 看到摘要 → 主动调 memory_expand 拿全文
 ```
 
 **注入的 XML 格式：**
@@ -305,8 +323,8 @@ npm install -g @mem-weave/opencode-plugin
 
 | 环境变量 | 默认值 | 含义 |
 |---|---|---|
-| `MEMWEAVE_URL` | `http://127.0.0.1:3131` | 服务端地址 |
-| `MEMWEAVE_PLUGIN_TIMEOUT` | `10000`（ms） | 单次注入超时 |
+| `MEMWEAVE_URL` | `http://127.0.0.1:3131` | 服务端地址（含注入 + 写入） |
+| `MEMWEAVE_PLUGIN_TIMEOUT` | `10000`（ms） | 单次请求超时（注入 + 写入共用） |
 
 > 插件对所有网络错误**静默容错**，服务端不可用时不会打断 Agent。
 

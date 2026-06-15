@@ -101,7 +101,11 @@ OpenCode 客户端：编辑 `~/.config/opencode/opencode.json`：
 }
 ```
 
-> 插件只负责把摘要注入 system prompt；MCP 工具（`memory_save` / `memory_recall` / `memory_expand` 等）由 `@mem-weave/server` 内置的 `/mcp` 端点统一提供，OpenCode 通过上面的 `mcp` 段远程连接。
+> **MCP 段必须手填一次** —— OpenCode 不调 plugin 的 `config` hook（见
+> [OpenCode plugins 文档](https://opencode.ai/docs/plugins/)，hooks 列表里没有
+> `config`），所以 plugin 无法把 `mcp.memweave` 段写进 OpenCode 配置；用户需要
+> 在 `opencode.json` 手填。改完后 OpenCode 启动时 plugin 0.4.1 会在 log
+> 里**不再**报"memweave MCP not auto-registered"警告。
 
 ### 方式二：仅 npx 试用
 
@@ -269,14 +273,13 @@ OpenCode 配置（`~/.config/opencode/opencode.json` 的 `mcp` 段）：
 
 ---
 
-## OpenCode 插件（自动注入 + 自动写入）
+## OpenCode 插件（自动注入 + 自动写入 + 写侧闭环）
 
-插件 `@mem-weave/opencode-plugin` 安装后做两件事（v0.4+）：
+插件 `@mem-weave/opencode-plugin` 安装后做三件事（v0.4+）：
 
 1. **注入记忆** — 每次对话/读文件时，把相关记忆的摘要追加到 system prompt，无需 LLM 主动调工具
 2. **写侧闭环（v0.4 新增）** — 监听 OpenCode 的 `message.updated` 事件，把每条完成的 user / assistant 消息自动上报到 `@mem-weave/server` 写进 `observations` 表（**幂等**：重复消息不会被重复写）
-
-MCP 工具（`memory_save` / `memory_recall` / `memory_expand` 等）由 `@mem-weave/server` 内置的 `/mcp` 端点统一提供，OpenCode 通过 plugin 的 `config` 钩子自动注册到 `mcp.memweave` 段（**无需手填**）。
+3. **MCP 端点** — 通过 OpenCode `mcp` 段远程连接 `@mem-weave/server` 的 `/mcp` 端点，获得 10 个 `memory_*` 工具。**注意**：OpenCode **不调** plugin 的 `config` hook（见 [OpenCode 插件文档](https://opencode.ai/docs/plugins/)，**没有** `config` hook），所以 `mcp.memweave` 段**必须用户手填一次**（见下方示例）。
 
 **启用方式：**
 
@@ -286,13 +289,22 @@ npm install -g @mem-weave/opencode-plugin
 
 `~/.config/opencode/opencode.json`：
 
-```json
+```jsonc
 {
-  "plugin": ["@mem-weave/opencode-plugin"]
+  "plugin": ["@mem-weave/opencode-plugin"],
+  "mcp": {
+    "memweave": {
+      "type": "remote",
+      "url": "http://127.0.0.1:3131/mcp",
+      "enabled": true
+    }
+  }
 }
 ```
 
-> **无需**手填 `mcp` 段 —— plugin 启动时会**强制注入** `mcp.memweave = { type: "remote", url: "http://127.0.0.1:3131/mcp", enabled: true }`。其他 MCP server 不受影响。
+> **必须**手填 `mcp` 段（一次即可）。plugin 启动时如果发现 `mcp.memweave` 缺失，
+> 会在 `~/.local/share/opencode/log/opencode.log` 输出一行 warn 提醒。
+> OpenCode 不调 plugin 的 `config` hook，所以 plugin 没办法自己注入这段。
 
 **写侧闭环数据流：**
 

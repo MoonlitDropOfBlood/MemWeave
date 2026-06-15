@@ -64,28 +64,36 @@ export const MemweaveInjectPlugin: Plugin = async ({ client: ocClient }) => {
   const client = new MemweaveInjectClient({ baseUrl: API, timeout: TIMEOUT });
   const sessionInjected = INJECTED_CACHE;
 
-  return {
-    // ── Force-register the remote MemWeave MCP endpoint ───────────────
-    // The MemWeave MCP server is embedded inside @mem-weave/server and
-    // exposed at /mcp (Streamable HTTP). Rather than ask the user to
-    // hand-edit ~/.config/opencode/opencode.json's `mcp` block, the
-    // plugin registers the remote endpoint itself on every OpenCode
-    // boot. We deliberately OVERWRITE any user-supplied `mcp.memweave`
-    // entry so the stack always points at the server the plugin
-    // targets (set via MEMWEAVE_URL). Other MCP servers in the
-    // `mcp` block are left untouched.
-    config: async (config) => {
-      const mcpUrl = `${API.replace(/\/+$/, '')}/mcp`;
-      if (!config.mcp) {
-        config.mcp = {} as NonNullable<typeof config.mcp>;
-      }
-      (config.mcp as Record<string, unknown>).memweave = {
-        type: 'remote',
-        url: mcpUrl,
-        enabled: true,
-      };
-    },
+  // ── Boot-time hint: the user must register the MCP endpoint ────────
+  // The MemWeave MCP server is embedded in @mem-weave/server at /mcp
+  // (Streamable HTTP). OpenCode does NOT call a `config` hook from
+  // plugins (see https://opencode.ai/docs/plugins/), so the plugin
+  // cannot register the mcp.memweave entry for the user. They must
+  // hand-edit `~/.config/opencode/opencode.json` once:
+  //
+  //   "mcp": {
+  //     "memweave": { "type": "remote", "url": "http://127.0.0.1:3131/mcp", "enabled": true }
+  //   }
+  //
+  // We log a structured warning at boot so the user can see this in
+  // `opencode.log` instead of being confused by "server unavailable"
+  // later. Best-effort: a missing `client.app.log` API is fine.
+  try {
+    await ocClient.app.log({
+      body: {
+        service: 'memweave-plugin',
+        level: 'warn',
+        message:
+          'memweave MCP not auto-registered. Add to opencode.json: ' +
+          '"mcp": { "memweave": { "type": "remote", "url": "' +
+          API.replace(/\/+$/, '') + '/mcp", "enabled": true } }',
+      },
+    });
+  } catch {
+    // silent: client.app.log is best-effort
+  }
 
+  return {
     // ── Write-side closure: report every chat message to MemWeave ─────
     // As of v0.4 the plugin listens to OpenCode's `event` bus and pushes
     // every completed message (user + assistant) to the MemWeave server
