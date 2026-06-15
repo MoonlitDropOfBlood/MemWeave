@@ -91,23 +91,28 @@ OpenCode client — edit `~/.config/opencode/opencode.json`:
 
 ```jsonc
 {
-  "plugin": ["@mem-weave/opencode-plugin"],
-  "mcp": {
-    "memweave": {
-      "type": "remote",
-      "url": "http://127.0.0.1:3131/mcp",
-      "enabled": true
-    }
-  }
+  "plugin": ["@mem-weave/opencode-plugin"]
 }
 ```
 
-> **The `mcp` block must be hand-edited once.** OpenCode does NOT call a
-> `config` hook from plugins (see the [OpenCode plugins docs](https://opencode.ai/docs/plugins/),
-> which does not list `config` among the available hooks), so the plugin
-> cannot register `mcp.memweave` for you. After you add it, plugin 0.4.1
-> will stop emitting the "memweave MCP not auto-registered" warning at
-> boot.
+> If you also have [`oh-my-openagent`](https://github.com/code-yeongyu/oh-my-openagent)
+> installed, it auto-reads the plugin's `.mcp.json` file and registers the
+> `memweave` remote endpoint as `${plugin.name}:memweave` — **no `mcp`
+> block to hand-edit**. If you don't have oh-my-openagent, OpenCode won't
+> auto-load the plugin's `.mcp.json`, so you need to add the `mcp` block
+> manually:
+>
+> ```jsonc
+> {
+>   "mcp": {
+>     "memweave": {
+>       "type": "remote",
+>       "url": "http://127.0.0.1:3131/mcp",
+>       "enabled": true
+>     }
+>   }
+> }
+> ```
 
 ### Option B — npx try-out (no install)
 
@@ -293,7 +298,7 @@ All tools call the server's REST API through `MemweaveClient`. Override the serv
 
 1. **Read side** — automatically injects relevant memory summaries into the system prompt (LLM doesn't have to call any tool to see context).
 2. **Write side (v0.4+)** — listens to OpenCode's `message.updated` event and pushes every completed user + assistant message to the server as a Session + Observation. The consolidation worker promotes high-signal observations into long-term memories on the next tick.
-3. **MCP endpoint** — the 10 `memory_*` tools come from `@mem-weave/server`'s built-in `/mcp` (Streamable HTTP). They are reached via the `mcp.memweave` block that **you must hand-add once** to `~/.config/opencode/opencode.json` — OpenCode does NOT call a `config` hook from plugins, so the plugin cannot auto-register this for you.
+3. **MCP endpoint (v0.4.2+)** — the plugin ships a `.mcp.json` file at its package root. **If you also have [`oh-my-openagent`](https://github.com/code-yeongyu/oh-my-openagent) installed**, oh-my-openagent auto-reads it and registers `memweave` as a remote MCP server (named `@mem-weave/opencode-plugin:memweave`). **No hand-editing required.** Without oh-my-openagent, you need to add the `mcp.memweave` block manually (see below).
 
 **Enable it:**
 
@@ -305,23 +310,27 @@ Then in `~/.config/opencode/opencode.json`:
 
 ```jsonc
 {
-  "plugin": ["@mem-weave/opencode-plugin"],
-  "mcp": {
-    "memweave": {
-      "type": "remote",
-      "url": "http://127.0.0.1:3131/mcp",
-      "enabled": true
-    }
-  }
+  "plugin": ["@mem-weave/opencode-plugin"]
 }
 ```
 
-> **The `mcp` block is required.** OpenCode does not call a plugin `config`
-> hook (see the [plugins docs](https://opencode.ai/docs/plugins/)) so the
-> plugin cannot register `mcp.memweave` for you. If it's missing, plugin
-> 0.4.1 logs a warning at boot via `client.app.log`; the LLM will then see
-> `MCP error -32000: Connection closed` whenever it tries to call a
-> `memory_*` tool.
+> **If you have oh-my-openagent**: no `mcp` block needed. oh-my-openagent
+> reads `@mem-weave/opencode-plugin/.mcp.json` and registers the remote
+> endpoint automatically.
+>
+> **If you don't have oh-my-openagent**: add the `mcp` block manually:
+>
+> ```jsonc
+> {
+>   "mcp": {
+>     "memweave": {
+>       "type": "remote",
+>       "url": "http://127.0.0.1:3131/mcp",
+>       "enabled": true
+>     }
+>   }
+> }
+> ```
 
 **What it does (hooks actually called by OpenCode):**
 

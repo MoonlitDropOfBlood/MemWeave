@@ -90,22 +90,26 @@ OpenCode 客户端：编辑 `~/.config/opencode/opencode.json`：
 
 ```jsonc
 {
-  "plugin": ["@mem-weave/opencode-plugin"],
-  "mcp": {
-    "memweave": {
-      "type": "remote",
-      "url": "http://127.0.0.1:3131/mcp",
-      "enabled": true
-    }
-  }
+  "plugin": ["@mem-weave/opencode-plugin"]
 }
 ```
 
-> **MCP 段必须手填一次** —— OpenCode 不调 plugin 的 `config` hook（见
-> [OpenCode plugins 文档](https://opencode.ai/docs/plugins/)，hooks 列表里没有
-> `config`），所以 plugin 无法把 `mcp.memweave` 段写进 OpenCode 配置；用户需要
-> 在 `opencode.json` 手填。改完后 OpenCode 启动时 plugin 0.4.1 会在 log
-> 里**不再**报"memweave MCP not auto-registered"警告。
+> 如果你**同时**装了 [`oh-my-openagent`](https://github.com/code-yeongyu/oh-my-openagent)，
+> 它会自动读取 plugin 根目录的 `.mcp.json` 并把 `memweave` 远程端点注册成
+> `${plugin.name}:memweave` —— **无需**手填 `mcp` 段。如果你没装 oh-my-openagent，
+> OpenCode 不会自动加载 plugin 的 `.mcp.json`，需要手填下面这段：
+>
+> ```jsonc
+> {
+>   "mcp": {
+>     "memweave": {
+>       "type": "remote",
+>       "url": "http://127.0.0.1:3131/mcp",
+>       "enabled": true
+>     }
+>   }
+> }
+> ```
 
 ### 方式二：仅 npx 试用
 
@@ -279,7 +283,7 @@ OpenCode 配置（`~/.config/opencode/opencode.json` 的 `mcp` 段）：
 
 1. **注入记忆** — 每次对话/读文件时，把相关记忆的摘要追加到 system prompt，无需 LLM 主动调工具
 2. **写侧闭环（v0.4 新增）** — 监听 OpenCode 的 `message.updated` 事件，把每条完成的 user / assistant 消息自动上报到 `@mem-weave/server` 写进 `observations` 表（**幂等**：重复消息不会被重复写）
-3. **MCP 端点** — 通过 OpenCode `mcp` 段远程连接 `@mem-weave/server` 的 `/mcp` 端点，获得 10 个 `memory_*` 工具。**注意**：OpenCode **不调** plugin 的 `config` hook（见 [OpenCode 插件文档](https://opencode.ai/docs/plugins/)，**没有** `config` hook），所以 `mcp.memweave` 段**必须用户手填一次**（见下方示例）。
+3. **MCP 端点（v0.4.2 新增）** — plugin 根目录带一个 `.mcp.json`，**当用户同时装 [`oh-my-openagent`](https://github.com/code-yeongyu/oh-my-openagent) 时**，oh-my-openagent 会自动读取并把 `memweave` 远程端点注册成 `${pluginName}:memweave`，**无需手填**。如果不装 oh-my-openagent，则需要手动在 `opencode.json` 写 `mcp.memweave` 段（见下方）。
 
 **启用方式：**
 
@@ -291,20 +295,28 @@ npm install -g @mem-weave/opencode-plugin
 
 ```jsonc
 {
-  "plugin": ["@mem-weave/opencode-plugin"],
-  "mcp": {
-    "memweave": {
-      "type": "remote",
-      "url": "http://127.0.0.1:3131/mcp",
-      "enabled": true
-    }
-  }
+  "plugin": ["@mem-weave/opencode-plugin"]
 }
 ```
 
-> **必须**手填 `mcp` 段（一次即可）。plugin 启动时如果发现 `mcp.memweave` 缺失，
-> 会在 `~/.local/share/opencode/log/opencode.log` 输出一行 warn 提醒。
-> OpenCode 不调 plugin 的 `config` hook，所以 plugin 没办法自己注入这段。
+> **如果你装了 oh-my-openagent**：无需在 opencode.json 写 `mcp` 段。
+> oh-my-openagent 会自动读 `@mem-weave/opencode-plugin/.mcp.json`，把
+> `memweave` 远程端点（`http://127.0.0.1:3131/mcp`）注册成
+> `@mem-weave/opencode-plugin:memweave`。
+>
+> **如果你没装 oh-my-openagent**：需要手填 `mcp` 段：
+>
+> ```jsonc
+> {
+>   "mcp": {
+>     "memweave": {
+>       "type": "remote",
+>       "url": "http://127.0.0.1:3131/mcp",
+>       "enabled": true
+>     }
+>   }
+> }
+> ```
 
 **写侧闭环数据流：**
 

@@ -1,0 +1,10 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcpServers": {
+    "memweave": {
+      "type": "remote",
+      "url": "http://127.0.0.1:3131/mcp",
+      "enabled": true
+    }
+  }
+}

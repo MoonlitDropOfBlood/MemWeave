@@ -12,9 +12,10 @@ TypeScript monorepo with two published npm packages and a web app:
 - **`@mem-weave/opencode-plugin`** — OpenCode plugin loaded into the OpenCode
   process. Auto-injects memory summaries into the system prompt and **writes**
   every completed chat message back to the server so the consolidation worker
-  can promote high-signal turns to long-term memories. **Does NOT** register
-  `mcp.memweave` for the user — OpenCode does not call a plugin `config` hook,
-  so users must add the `mcp` block to `opencode.json` by hand.
+  can promote high-signal turns to long-term memories. Ships a `.mcp.json` at
+  its package root so `oh-my-openagent` auto-registers the `mcp.memweave`
+  remote endpoint; standalone OpenCode users still need to hand-add the
+  `mcp.memweave` block to `opencode.json`.
 - **`web/`** — React 18 + Vite admin UI ("Calm Memory Atlas"). Browsing,
   searching, debugging, and operating the memory system.
 
@@ -122,7 +123,8 @@ memweave/
 - **Edge type vocabulary** (`packages/server/src/core/types.ts`): `causes`, `enables`, `contradicts`, `supersedes`, `references`, `related_to`, `before`, `after`, `duplicates`, `refines` — design §10.6 colors are defined in `tokens.css`.
 - **RRF fusion** (not learned reranking): `packages/server/src/retrieval/fusion.ts` uses Reciprocal Rank Fusion with configurable K (default 60).
 - **Plugin is fail-silent**: every network call in `packages/opencode-plugin/src/index.ts` is wrapped in `try/catch`; a MemWeave outage never breaks the agent.
-- **Plugin does NOT register `mcp.memweave`**. OpenCode does not call a plugin `config` hook (see [opencode.ai/docs/plugins/](https://opencode.ai/docs/plugins/) — the documented hooks are `event`, `tool.execute.before` / `after`, `command.executed`, `shell.env`, `tool`, `experimental.session.compacting`; `config` is in the d.ts but never invoked). The user must hand-add the `mcp.memweave` block to `opencode.json` once.
+- **Plugin ships a `.mcp.json`** at its package root. `oh-my-openagent` reads it on boot and auto-registers `${pluginName}:memweave` as a remote MCP server. Standalone OpenCode users (without oh-my-openagent) still need to hand-add the `mcp.memweave` block to `opencode.json`.
+- **Plugin does NOT use a `config` hook**. OpenCode does not call a plugin `config` hook (see [opencode.ai/docs/plugins/](https://opencode.ai/docs/plugins/) — the documented hooks are `event`, `tool.execute.before` / `after`, `command.executed`, `shell.env`, `tool`, `experimental.session.compacting`; `config` is in the d.ts but never invoked). The `.mcp.json` file is the official Claude Code / oh-my-openagent way to ship MCP servers with a plugin.
 - **Plugin `event` hook is the write side**: every `message.updated` event triggers an `ocClient.session.messages()` reverse-query followed by `POST /sessions` + `POST /observations`. Idempotent at the server end.
 
 ## COMMANDS

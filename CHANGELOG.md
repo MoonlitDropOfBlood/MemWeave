@@ -26,6 +26,34 @@ _No changes yet._
 
 ---
 
+## [0.4.2] — 2026-06-15
+
+### Added — [@mem-weave/opencode-plugin]
+
+- **`.mcp.json` at the package root** so `oh-my-openagent` auto-registers
+  the MemWeave remote MCP endpoint. oh-my-openagent's
+  `loadPluginMcpServers()` reads each plugin's `<installPath>/.mcp.json`
+  and registers the `mcpServers` block as
+  `${pluginName}:${serverName}` (e.g.
+  `@mem-weave/opencode-plugin:memweave`). This eliminates the need for
+  users to hand-edit `~/.config/opencode/opencode.json` to add an `mcp`
+  block — the standard Claude Code plugin contract for shipping MCP
+  servers with a plugin, supported by oh-my-openagent's
+  claude-code-plugin-loader.
+
+### Migration from v0.4.1
+
+If you have oh-my-openagent installed: no changes required. Restart
+OpenCode and the MemWeave MCP server will be auto-registered. You can
+optionally **remove** the hand-added `mcp.memweave` block from
+`opencode.json` since the plugin now ships its own.
+
+If you don't have oh-my-openagent: continue to hand-add the
+`mcp.memweave` block to `opencode.json` — this version doesn't help
+those users (they need either oh-my-openagent or a hand-edit).
+
+---
+
 ## [0.4.1] — 2026-06-15
 
 ### Fixed — [@mem-weave/opencode-plugin]

@@ -1,16 +1,16 @@
 # src/
 
-**OpenCode plugin for `@mem-weave/opencode-plugin`. Closes the read loop (auto-injection of summary-only XML) and the write loop (auto-upsert of every chat message back to the MemWeave server).**
+**OpenCode plugin for `@mem-weave/opencode-plugin`. Closes the read loop (auto-injection of summary-only XML) and the write loop (auto-upsert of every chat message back to the MemWeave server). Also ships a `.mcp.json` at the package root so `oh-my-openagent` auto-registers the MemWeave remote MCP endpoint.**
 
 ## OVERVIEW
 
 `MemweaveInjectPlugin` runs inside the OpenCode process. On every OpenCode boot
-it does three things, in order:
+it does four things, in order:
 
-1. **Boot-time warning** — emits a `client.app.log({ level: "warn" })` if the
-   `mcp.memweave` block is missing from OpenCode's config, telling the user
-   exactly how to add it. This is informational only — the plugin cannot
-   register it itself (see "MCP registration" below).
+1. **Boot-time warning (optional)** — emits a `client.app.log({ level: "warn" })`
+   if the user has not set up an MCP path (either oh-my-openagent isn't
+   installed, or the plugin's `.mcp.json` is not being honored). Helpful
+   for debugging "Connection closed" errors but not strictly required.
 2. **`event` hook** — listens to OpenCode's `message.updated` event bus. For
    every completed user/assistant message, reverse-queries the OpenCode SDK
    (`input.client.session.messages`) for the full `Part[]` text, then POSTs
@@ -26,21 +26,13 @@ it does three things, in order:
    `file_pack` of file-related memories and queues the XML for the
    next `system.transform` to flush.
 
-## MCP REGISTRATION
+## MCP REGISTRATION (via `.mcp.json`)
 
-**The plugin does NOT register `mcp.memweave` for the user.** OpenCode's
-documented plugin hooks ([opencode.ai/docs/plugins/](https://opencode.ai/docs/plugins/))
-are: `event`, `tool.execute.before`, `tool.execute.after`, `command.executed`,
-`shell.env`, `tool` (custom tool), `experimental.session.compacting`. There
-is **no** `config` hook in the runtime — even though `@opencode-ai/plugin`'s
-`Hooks` type has one, OpenCode never invokes it.
-
-So the user MUST hand-edit `~/.config/opencode/opencode.json` once:
+The plugin ships a `.mcp.json` at the package root:
 
 ```jsonc
 {
-  "plugin": ["@mem-weave/opencode-plugin"],
-  "mcp": {
+  "mcpServers": {
     "memweave": {
       "type": "remote",
       "url": "http://127.0.0.1:3131/mcp",
@@ -50,12 +42,18 @@ So the user MUST hand-edit `~/.config/opencode/opencode.json` once:
 }
 ```
 
-If the user forgets, OpenCode tries to spawn `@mem-weave/opencode-plugin` as
-a stdio MCP server (because no `mcp.memweave` entry exists), the package has
-no `bin` field, the spawn fails, and the LLM sees
-`MCP error -32000: Connection closed` when calling any `memory_*` tool.
-The plugin's boot-time warning is the only way to surface this issue before
-the user hits it.
+`oh-my-openagent` reads this on boot (via its `loadPluginMcpServers`
+function in `dist/index.js`) and registers it as
+`@mem-weave/opencode-plugin:memweave` — **no hand-editing of
+`opencode.json` is needed**.
+
+**Standalone OpenCode users (without oh-my-openagent)** still need to
+add the `mcp.memweave` block to `~/.config/opencode/opencode.json` by
+hand, because vanilla OpenCode doesn't auto-load plugin `.mcp.json`
+files. (OpenCode itself does not call a plugin `config` hook, even
+though the type exists in `@opencode-ai/plugin`. See
+[opencode.ai/docs/plugins/](https://opencode.ai/docs/plugins/) for the
+documented hooks.)
 
 This is the **write-side closure**: without the `event` hook the
 system would be read-only from the agent's perspective — high-signal
