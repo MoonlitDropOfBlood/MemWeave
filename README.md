@@ -69,22 +69,48 @@ LLM 看到摘要，需要细节就主动调 `memory_expand({ memoryId: "m_abc" }
 
 ## 5 分钟上手
 
-### 方式一：通过 npx 运行（推荐）
+### 方式一：全局安装（推荐，OpenCode / IDE 集成需要）
 
 ```bash
-npx @mem-weave/server init     # 生成 memweave.config.jsonc + 数据目录
-npx @mem-weave/server start    # 启动服务（前台，默认 http://127.0.0.1:3131）
+npm install -g @mem-weave/server @mem-weave/opencode-plugin
+memweave init     # 生成 memweave.config.jsonc + 数据目录
+memweave start    # 启动服务（前台，默认 http://127.0.0.1:3131）
 ```
 
 打开浏览器访问 [`http://127.0.0.1:3131/ui/`](http://127.0.0.1:3131/ui/) 即可看到 **Calm Memory Atlas** Web UI。
 
-OpenCode 用户额外安装插件：
+#### 后台启动（Windows / PowerShell）
 
-```bash
-npm install -g @mem-weave/opencode-plugin
+```powershell
+Start-Process -WindowStyle Hidden memweave start
+memweave stop     # 停止（需要 server 进程是 CLI 启动的，留有 PID 文件）
 ```
 
-然后在 `~/.config/opencode/opencode.json` 的 `plugin` 数组里加 `"@mem-weave/opencode-plugin"`，之后每次对话会自动注入相关记忆。
+OpenCode 客户端：编辑 `~/.config/opencode/opencode.json`：
+
+```jsonc
+{
+  "plugin": ["@mem-weave/opencode-plugin"],
+  "mcp": {
+    "memweave": {
+      "type": "remote",
+      "url": "http://127.0.0.1:3131/mcp",
+      "enabled": true
+    }
+  }
+}
+```
+
+> 插件只负责把摘要注入 system prompt；MCP 工具（`memory_save` / `memory_recall` / `memory_expand` 等）由 `@mem-weave/server` 内置的 `/mcp` 端点统一提供，OpenCode 通过上面的 `mcp` 段远程连接。
+
+### 方式二：仅 npx 试用
+
+```bash
+npx @mem-weave/server init     # 生成 memweave.config.jsonc + 数据目录
+npx @mem-weave/server start    # 启动服务（前台）
+```
+
+仅限**临时试用**。OpenCode / IDE 集成需要全局安装 server（方式一），否则 MCP 端点 `http://127.0.0.1:3131/mcp` 在 npx 进程退出后消失。
 
 ### 方式二：从源码运行（用于开发）
 

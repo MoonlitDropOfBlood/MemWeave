@@ -70,24 +70,50 @@ The plugin only injects summaries into the system prompt (step 1). The MCP tools
 
 ## 5-minute quickstart
 
-### Option A — via npx (recommended)
+### Option A — global install (recommended; needed for OpenCode / IDE integration)
 
 ```bash
-npx @mem-weave/server init     # generate memweave.config.jsonc + data dir
-npx @mem-weave/server start    # foreground server on :3131
+npm install -g @mem-weave/server @mem-weave/opencode-plugin
+memweave init     # generate memweave.config.jsonc + data dir
+memweave start    # foreground server on :3131
 ```
 
 Open [`http://127.0.0.1:3131/ui/`](http://127.0.0.1:3131/ui/) to see the **Calm Memory Atlas** Web UI.
 
-OpenCode users additionally:
+#### Detached start (Windows / PowerShell)
 
-```bash
-npm install -g @mem-weave/opencode-plugin
+```powershell
+Start-Process -WindowStyle Hidden memweave start
+memweave stop     # stop (requires the server to be a CLI-spawned process with a PID file)
 ```
 
-Then add `"@mem-weave/opencode-plugin"` to the `plugin` array in `~/.config/opencode/opencode.json` — the plugin auto-injects relevant memories into every conversation.
+OpenCode client — edit `~/.config/opencode/opencode.json`:
 
-### Option B — from source (development)
+```jsonc
+{
+  "plugin": ["@mem-weave/opencode-plugin"],
+  "mcp": {
+    "memweave": {
+      "type": "remote",
+      "url": "http://127.0.0.1:3131/mcp",
+      "enabled": true
+    }
+  }
+}
+```
+
+> The plugin only injects summaries into the system prompt. The MCP tools (`memory_save` / `memory_recall` / `memory_expand` …) are provided by the built-in `/mcp` endpoint inside `@mem-weave/server`. OpenCode reaches them via the `mcp` block above.
+
+### Option B — npx try-out (no install)
+
+```bash
+npx @mem-weave/server init     # generate memweave.config.jsonc + data dir
+npx @mem-weave/server start    # foreground server
+```
+
+**Try-out only.** OpenCode / IDE integration needs the server to be globally installed (Option A), otherwise the `http://127.0.0.1:3131/mcp` endpoint disappears the moment the npx process exits.
+
+### Option C — from source (development)
 
 ```bash
 git clone <repo-url> memweave
