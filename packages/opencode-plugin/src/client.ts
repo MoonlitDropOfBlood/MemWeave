@@ -15,6 +15,23 @@ export interface InjectResponse {
   contextXml: string;
 }
 
+export interface ReportSessionRequest {
+  sessionId: string;
+  source: 'opencode' | 'cli' | 'mcp' | 'web' | 'sdk';
+  title: string;
+  deviceId?: string;
+}
+
+export interface ReportObservationRequest {
+  sessionId: string;
+  messageId: string;
+  hookType: 'chat.user' | 'chat.assistant' | 'chat.tool';
+  text: string;
+  toolName?: string;
+  toolInput?: string;
+  toolOutput?: string;
+}
+
 export interface MemweaveInjectClientOptions {
   baseUrl: string;
   timeout?: number;
@@ -43,5 +60,35 @@ export class MemweaveInjectClient {
     }
     const data = await res.json() as InjectResponse;
     return data;
+  }
+
+  /** Idempotent: server upserts on sessionId. */
+  async reportSession(req: ReportSessionRequest): Promise<void> {
+    const url = `${this.baseUrl}/api/v1/sessions`;
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(req),
+      signal: AbortSignal.timeout(this.timeout)
+    });
+    if (!res.ok) {
+      const text = await res.text().catch(() => '');
+      throw new Error(`reportSession failed: ${res.status} ${text.slice(0, 200)}`);
+    }
+  }
+
+  /** Idempotent: server upserts on (sessionId, messageId). */
+  async reportObservation(req: ReportObservationRequest): Promise<void> {
+    const url = `${this.baseUrl}/api/v1/observations`;
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(req),
+      signal: AbortSignal.timeout(this.timeout)
+    });
+    if (!res.ok) {
+      const text = await res.text().catch(() => '');
+      throw new Error(`reportObservation failed: ${res.status} ${text.slice(0, 200)}`);
+    }
   }
 }

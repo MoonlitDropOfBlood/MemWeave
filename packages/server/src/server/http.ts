@@ -67,17 +67,13 @@ export async function createHttpServer(options: CreateHttpServerOptions) {
   // opens a fresh MCP server + transport pair (stateless mode),
   // backed by an McpService that talks to the in-process SQLite
   // via repos. See ../mcp/index.ts for the handler implementation.
-  //
+  // ── MCP endpoint ─────────────────────────────────────────────────────
   // The MCP spec allows BOTH a single JSON object per request AND
   // newline-delimited JSON (one batched request can carry many
   // JSON-RPC messages). Fastify's built-in JSON parser only handles
-  // the first form; the NDJSON form would error out. We swap in a
-  // permissive parser for /mcp that hands the raw bytes to the
-  // bridge (which decides per-line whether to parse as JSON or
-  // forward as-is).
-  app.addContentTypeParser('application/json', { parseAs: 'string' }, (_req, body, done) => {
-    done(null, body);
-  });
+  // the first form; the NDJSON form would error out. The MCP handler
+  // reads the raw body itself (we still keep Fastify's default JSON
+  // parser active for the REST routes — they're strict JSON).
   const handleMcp = buildMcpHandler({ db });
   app.post('/mcp', async (req, reply) => {
     await handleMcp(req, reply);

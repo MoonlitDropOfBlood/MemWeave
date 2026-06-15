@@ -62,6 +62,36 @@ export class ObservationRepo {
     };
   }
 
+  /**
+   * Idempotent: returns the existing record if (sessionId, messageId) is
+   * already present, otherwise creates a new one. We use `tool_input` to
+   * stash the message id JSON for chat.* observations — the column is
+   * already in the schema and not used for chat-only hook types.
+   */
+  createOrGetByMessageId(input: CreateObservationInput & { messageId: string }): {
+    record: ObservationRecord;
+    created: boolean;
+  } {
+    const existing = this.findByMessageId(input.tenantId, input.sessionId, input.messageId);
+    if (existing) return { record: existing, created: false };
+    const record = this.create(input);
+    return { record, created: true };
+  }
+
+  /** Find an observation by the (sessionId, messageId) pair encoded into `tool_input`. */
+  findByMessageId(tenantId: string, sessionId: string, messageId: string): ObservationRecord | null {
+    // tool_input is JSON: { messageId: "msg_xyz", role: "user" | "assistant" } for chat.* hooks
+    // Use LIKE with a deterministic prefix to avoid JSON parse overhead on the hot path.
+    const tag = `"messageId":"${messageId.replace(/"/g, '')}"`;
+    const row = this.db.prepare(`
+      SELECT * FROM observations
+      WHERE tenant_id = ? AND session_id = ? AND tool_input LIKE ?
+      LIMIT 1
+    `).get(tenantId, sessionId, `%${tag}%`) as ObservationRow | undefined;
+    if (!row) return null;
+    return this.mapRow(row);
+  }
+
   getById(tenantId: string, id: string): ObservationRecord | null {
     const row = this.db.prepare(`
       SELECT * FROM observations WHERE tenant_id = ? AND id = ?

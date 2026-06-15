@@ -11,6 +11,13 @@ const ListQuerySchema = z.object({
 
 const IdParamSchema = z.object({ id: z.string().min(1) });
 
+const CreateSessionSchema = z.object({
+  sessionId: z.string().min(1).max(200),
+  source: z.enum(['opencode', 'cursor', 'claude_code', 'rest_api']),
+  title: z.string().min(1).max(500),
+  deviceId: z.string().min(1).max(200).optional()
+});
+
 export function registerSessionsRoute(app: FastifyInstance, dbPath: string): void {
   const sessionRepo = new SessionRepo(openDatabase(dbPath));
 
@@ -18,6 +25,18 @@ export function registerSessionsRoute(app: FastifyInstance, dbPath: string): voi
     const query = ListQuerySchema.parse(request.query);
     const list = sessionRepo.listRecent(TENANT_DEFAULT, query.limit);
     return reply.code(200).send({ sessions: list, total: list.length });
+  });
+
+  app.post('/api/v1/sessions', async (request, reply) => {
+    const body = CreateSessionSchema.parse(request.body);
+    const { record, created } = sessionRepo.findOrCreate({
+      tenantId: TENANT_DEFAULT,
+      deviceId: body.deviceId ?? null,
+      source: body.source,
+      title: body.title,
+      sessionId: body.sessionId
+    });
+    return reply.code(created ? 201 : 200).send({ session: record, created });
   });
 
   app.get('/api/v1/sessions/:id', async (request, reply) => {

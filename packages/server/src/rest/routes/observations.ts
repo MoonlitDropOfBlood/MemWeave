@@ -12,6 +12,16 @@ const ListQuerySchema = z.object({
 
 const IdParamSchema = z.object({ id: z.string().min(1) });
 
+const CreateObservationSchema = z.object({
+  sessionId: z.string().min(1).max(200),
+  messageId: z.string().min(1).max(200),
+  hookType: z.enum(['chat.user', 'chat.assistant', 'chat.tool']),
+  text: z.string().min(1).max(200_000),
+  toolName: z.string().min(1).max(200).optional(),
+  toolInput: z.string().max(200_000).optional(),
+  toolOutput: z.string().max(200_000).optional()
+});
+
 export function registerObservationsRoute(app: FastifyInstance, dbPath: string): void {
   const obsRepo = new ObservationRepo(openDatabase(dbPath));
 
@@ -21,6 +31,29 @@ export function registerObservationsRoute(app: FastifyInstance, dbPath: string):
       ? obsRepo.listUnprocessed(TENANT_DEFAULT, query.limit)
       : obsRepo.listUnprocessed(TENANT_DEFAULT, query.limit); // v1: same path; v1.1 will add a "list all" method
     return reply.code(200).send({ observations: list, total: list.length });
+  });
+
+  app.post('/api/v1/observations', async (request, reply) => {
+    const body = CreateObservationSchema.parse(request.body);
+    // For chat.* observations, the message id + role get stashed into
+    // `tool_input` as a small JSON envelope so the idempotency check
+    // (sessionId, messageId) can locate the existing record without a
+    // schema change. The actual chat body lives in `tool_output`.
+    const envelope: Record<string, unknown> = { messageId: body.messageId };
+    if (body.toolInput) envelope.toolInput = body.toolInput;
+    if (body.toolName) envelope.toolName = body.toolName;
+    const toolInput = JSON.stringify(envelope);
+    const { record, created } = obsRepo.createOrGetByMessageId({
+      sessionId: body.sessionId,
+      tenantId: TENANT_DEFAULT,
+      hookType: body.hookType,
+      toolName: body.toolName ?? null,
+      toolInput,
+      toolOutput: body.text,
+      memoryId: null,
+      messageId: body.messageId
+    });
+    return reply.code(created ? 201 : 200).send({ observation: record, created });
   });
 
   app.get('/api/v1/observations/:id', async (request, reply) => {

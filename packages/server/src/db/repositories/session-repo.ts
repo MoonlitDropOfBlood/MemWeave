@@ -68,6 +68,45 @@ export class SessionRepo {
     };
   }
 
+  /**
+   * Idempotent: returns the existing session for `sessionId` if present,
+   * otherwise creates a new one. Lets clients (e.g. the OpenCode plugin)
+   * POST the same session many times without growing duplicates.
+   *
+   * NOTE: when a record already exists, the new `title` is NOT applied
+   * — the original is preserved. We may want to update title in a
+   * follow-up.
+   */
+  findOrCreate(input: CreateSessionInput & { sessionId: string }): {
+    record: SessionRecord;
+    created: boolean;
+  } {
+    const existing = this.getById(input.tenantId, input.sessionId);
+    if (existing) return { record: existing, created: false };
+    // SessionRepo.create() generates its own UUID — to honour the
+    // caller-supplied id we build the row directly here.
+    const now = Date.now();
+    this.db.prepare(`
+      INSERT INTO sessions (id, tenant_id, device_id, source, title, summary, started_at, ended_at, observation_count)
+      VALUES (?, ?, ?, ?, ?, NULL, ?, NULL, 0)
+    `).run(input.sessionId, input.tenantId, input.deviceId, input.source, input.title, now);
+
+    return {
+      record: {
+        id: input.sessionId,
+        tenantId: input.tenantId,
+        deviceId: input.deviceId,
+        source: input.source,
+        title: input.title,
+        summary: null,
+        startedAt: now,
+        endedAt: null,
+        observationCount: 0,
+      },
+      created: true,
+    };
+  }
+
   getById(tenantId: string, id: string): SessionRecord | null {
     const row = this.db.prepare(`
       SELECT * FROM sessions WHERE tenant_id = ? AND id = ?

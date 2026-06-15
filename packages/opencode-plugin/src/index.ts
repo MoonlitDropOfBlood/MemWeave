@@ -60,20 +60,125 @@ function extractFilePaths(args: Record<string, unknown>): string[] {
   return files;
 }
 
-export const MemweaveInjectPlugin: Plugin = async () => {
+export const MemweaveInjectPlugin: Plugin = async ({ client: ocClient }) => {
   const client = new MemweaveInjectClient({ baseUrl: API, timeout: TIMEOUT });
   const sessionInjected = INJECTED_CACHE;
 
   return {
-    // As of v0.4 the MemWeave MCP server is embedded in the main
-    // @mem-weave/server process and exposed at /mcp (Streamable HTTP).
-    // The user wires it up in opencode.json directly:
+    // ── Force-register the remote MemWeave MCP endpoint ───────────────
+    // The MemWeave MCP server is embedded inside @mem-weave/server and
+    // exposed at /mcp (Streamable HTTP). Rather than ask the user to
+    // hand-edit ~/.config/opencode/opencode.json's `mcp` block, the
+    // plugin registers the remote endpoint itself on every OpenCode
+    // boot. We deliberately OVERWRITE any user-supplied `mcp.memweave`
+    // entry so the stack always points at the server the plugin
+    // targets (set via MEMWEAVE_URL). Other MCP servers in the
+    // `mcp` block are left untouched.
+    config: async (config) => {
+      const mcpUrl = `${API.replace(/\/+$/, '')}/mcp`;
+      if (!config.mcp) {
+        config.mcp = {} as NonNullable<typeof config.mcp>;
+      }
+      (config.mcp as Record<string, unknown>).memweave = {
+        type: 'remote',
+        url: mcpUrl,
+        enabled: true,
+      };
+    },
+
+    // ── Write-side closure: report every chat message to MemWeave ─────
+    // As of v0.4 the plugin listens to OpenCode's `event` bus and pushes
+    // every completed message (user + assistant) to the MemWeave server
+    // as a Session + Observation. This closes the loop: the LLM/agent
+    // is no longer read-only — its high-signal turns become observations
+    // that the consolidation worker can promote to memories.
     //
-    //   mcp: { memweave: { type: 'remote', url: 'http://127.0.0.1:3131/mcp' } }
-    //
-    // This plugin no longer spawns an MCP child process — it only
-    // handles the summary-only XML injection that primes the LLM
-    // before it calls memory_expand on the remote MCP server.
+    // The flow:
+    //   1. `event.message.updated` fires once per message after OpenCode
+    //      has finalised it. We extract the role + message id + session
+    //      id from the message metadata.
+    //   2. We then ask the OpenCode SDK (input.client.session.messages)
+    //      for the full Part[] list of that single message so we have
+    //      the actual text (Message metadata itself has no `text`).
+    //   3. POST /api/v1/sessions (idempotent) and POST
+    //      /api/v1/observations (idempotent on (sessionId, messageId))
+    //      on the MemWeave server.
+    // All steps are silent-fail — a MemWeave outage never breaks the
+    // agent. Debouncing isn't needed: `message.updated` is once per
+    // message, not once per streamed token (the per-token stream
+    // is `message.part.updated` which we deliberately do NOT handle).
+    event: async (input) => {
+      const ev = input.event;
+      if (ev.type !== 'message.updated') return;
+      const msg = ev.properties.info;
+
+      // Skip synthetic messages (system-generated, no user content)
+      if ('synthetic' in msg && msg.synthetic) return;
+
+      const sessionID = msg.sessionID;
+      const messageID = msg.id;
+      if (!sessionID || !messageID) return;
+
+      // Tool messages don't exist in `Message` (it's UserMessage |
+      // AssistantMessage), but assistant text can include tool-call
+      // XML/tags from MCP. We just take the text we get.
+      if (msg.role !== 'user' && msg.role !== 'assistant') return;
+
+      // Resolve the OpenCode SDK client (provided by the host
+      // OpenCode process). The plugin only has access to it inside
+      // the `event` callback — the function passed to the SDK
+      // captures it via the `sdk` parameter.
+      // We re-use the host-supplied `input.client` from the
+      // PluginInput envelope. Note: the `event` hook signature in
+      // `@opencode-ai/plugin` is `(input: { event: Event }) => void`
+      // — the SDK client is not on the input. We attach it to
+      // module scope at the top of the plugin factory instead.
+      const sdk = ocClient;
+      if (!sdk) return;
+
+      // Pull the full Part[] for this message so we have the text.
+      let textParts: string[] = [];
+      try {
+        const res = await sdk.session.messages({ path: { id: sessionID } });
+        const messages = (res as { data?: Array<{ info: unknown; parts: Array<{ type: string; text?: string }> }> }).data ?? [];
+        const target = messages.find((m) => {
+          const info = m.info as { id?: string };
+          return info.id === messageID;
+        });
+        if (target) {
+          for (const p of target.parts) {
+            if (p.type === 'text' && typeof p.text === 'string') {
+              textParts.push(p.text);
+            }
+          }
+        }
+      } catch {
+        // Silent fail: server unreachable or session not yet visible.
+        return;
+      }
+
+      const text = textParts.join('\n').trim();
+      if (text.length === 0) return;
+
+      const hookType: 'chat.user' | 'chat.assistant' =
+        msg.role === 'user' ? 'chat.user' : 'chat.assistant';
+
+      // Idempotent: server upserts on (sessionId, messageId). The
+      // title is derived from the first ~80 chars of the user
+      // message (or the assistant text, whichever we have).
+      const title = text.slice(0, 80).replace(/\s+/g, ' ');
+      try {
+        await client.reportSession({ sessionId: sessionID, source: 'opencode', title });
+        await client.reportObservation({
+          sessionId: sessionID,
+          messageId: messageID,
+          hookType,
+          text,
+        });
+      } catch {
+        // Silent fail
+      }
+    },
 
     // ── Inject summary-only XML into the system prompt ────────────────
     // The XML contains only <title> + <summary> per memory (progressive
