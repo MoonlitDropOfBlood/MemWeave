@@ -90,6 +90,33 @@ async function bridgeFastifyToMcp(
     if (v === undefined) continue;
     headerEntries.push([k, Array.isArray(v) ? v.join(', ') : String(v)]);
   }
+
+  // The MCP SDK's WebStandardStreamableHTTPServerTransport requires
+  // `Accept: application/json, text/event-stream` (POST) and
+  // `text/event-stream` (GET). Some clients (older or modified OpenCode
+  // builds, custom CLI scripts) send only one of those, in which case
+  // the transport rejects with HTTP 406 + JSON-RPC -32000
+  // ("Not Acceptable: Client must accept text/event-stream") and the
+  // LLM sees "MCP error -32000: Connection closed".
+  //
+  // To make the server forgiving without breaking strict clients,
+  // we add the missing tokens to the Accept header before forwarding.
+  // If the client already sent both, this is a no-op (idempotent
+  // set membership). If they sent only one, we add the other.
+  let acceptHeader = headerEntries.find(([k]) => k.toLowerCase() === 'accept')?.[1] ?? '';
+  const hasJson = acceptHeader.toLowerCase().includes('application/json');
+  const hasSse  = acceptHeader.toLowerCase().includes('text/event-stream');
+  if (!hasJson || !hasSse) {
+    const parts: string[] = [];
+    if (acceptHeader) parts.push(acceptHeader);
+    if (!hasJson) parts.push('application/json');
+    if (!hasSse)  parts.push('text/event-stream');
+    acceptHeader = parts.join(', ');
+    const idx = headerEntries.findIndex(([k]) => k.toLowerCase() === 'accept');
+    if (idx >= 0) headerEntries[idx][1] = acceptHeader;
+    else headerEntries.push(['Accept', acceptHeader]);
+  }
+
   const init: RequestInit = {
     method: req.method,
     headers: headerEntries

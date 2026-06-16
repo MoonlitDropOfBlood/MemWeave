@@ -26,6 +26,41 @@ _No changes yet._
 
 ---
 
+## [0.5.1] — 2026-06-16
+
+### Fixed — [@mem-weave/server]
+
+- **MCP `/mcp` handler now accepts any `Accept` header** (defensive
+  fix for clients that send only one of `application/json` /
+  `text/event-stream`, or no Accept header at all). The MCP SDK's
+  `WebStandardStreamableHTTPServerTransport` returns HTTP 406 +
+  JSON-RPC error -32000 ("Not Acceptable: Client must accept
+  text/event-stream") when the Accept header doesn't list both
+  content types. The Fastify → Web-Standard transport bridge now
+  augments the Accept header with the missing tokens before
+  dispatching the request, so the bridge is forgiving without
+  breaking strict clients (their original Accept header values
+  are preserved).
+
+  Symptom this fixes: OpenCode users with `mcp.memweave = { type: "remote" }`
+  in their `opencode.json` see "MCP error -32000: Connection closed"
+  in the LLM when the OpenCode build's Streamable HTTP client sends
+  a single Accept token (instead of the SDK-standard
+  `application/json, text/event-stream`). The server 0.5.0
+  strictly required the standard pair; 0.5.1 accepts any single
+  or paired Accept.
+
+### Verified
+
+- `Accept: application/json, text/event-stream` (OpenCode SDK default) → 200 ✅
+- `Accept: application/json` only → 200 ✅ (was 406)
+- `Accept: text/event-stream` only → 200 ✅ (was 406)
+- No Accept header → 200 ✅ (was 406)
+- Full end-to-end (`initialize` + `tools/list` + `memory_save` +
+  `memory_recall`) all return 200 with 10 `memory_*` tools
+
+---
+
 ## [0.4.3] — 2026-06-16
 
 ### Documentation — no plugin code changes
