@@ -91,28 +91,28 @@ OpenCode client — edit `~/.config/opencode/opencode.json`:
 
 ```jsonc
 {
-  "plugin": ["@mem-weave/opencode-plugin"]
+  "plugin": ["@mem-weave/opencode-plugin"],
+  "mcp": {
+    "memweave": {
+      "type": "remote",
+      "url": "http://127.0.0.1:3131/mcp",
+      "enabled": true
+    }
+  }
 }
 ```
 
-> If you also have [`oh-my-openagent`](https://github.com/code-yeongyu/oh-my-openagent)
-> installed, it auto-reads the plugin's `.mcp.json` file and registers the
-> `memweave` remote endpoint as `${plugin.name}:memweave` — **no `mcp`
-> block to hand-edit**. If you don't have oh-my-openagent, OpenCode won't
-> auto-load the plugin's `.mcp.json`, so you need to add the `mcp` block
-> manually:
+> **The `mcp` block is required.** OpenCode does not call a plugin
+> `config` hook (see the [plugins docs](https://opencode.ai/docs/plugins/)).
+> The `type` field **must** be `"remote"` — OpenCode's Effect schema only
+> accepts `"remote"`; `"http"` / `"sse"` are silently dropped.
 >
-> ```jsonc
-> {
->   "mcp": {
->     "memweave": {
->       "type": "remote",
->       "url": "http://127.0.0.1:3131/mcp",
->       "enabled": true
->     }
->   }
-> }
-> ```
+> The plugin **also** ships a `.mcp.json` at its package root as a
+> backup path via [`oh-my-openagent`](https://github.com/code-yeongyu/oh-my-openagent),
+> but oh-my-openagent depends on `~/.claude/plugins/installed_plugins.json`
+> (Claude Code's plugin DB) — most users don't have Claude Code, so
+> `.mcp.json` is **not** a reliable path. Hand-editing `mcp.memweave`
+> is the main path.
 
 ### Option B — npx try-out (no install)
 
@@ -298,7 +298,7 @@ All tools call the server's REST API through `MemweaveClient`. Override the serv
 
 1. **Read side** — automatically injects relevant memory summaries into the system prompt (LLM doesn't have to call any tool to see context).
 2. **Write side (v0.4+)** — listens to OpenCode's `message.updated` event and pushes every completed user + assistant message to the server as a Session + Observation. The consolidation worker promotes high-signal observations into long-term memories on the next tick.
-3. **MCP endpoint (v0.4.2+)** — the plugin ships a `.mcp.json` file at its package root. **If you also have [`oh-my-openagent`](https://github.com/code-yeongyu/oh-my-openagent) installed**, oh-my-openagent auto-reads it and registers `memweave` as a remote MCP server (named `@mem-weave/opencode-plugin:memweave`). **No hand-editing required.** Without oh-my-openagent, you need to add the `mcp.memweave` block manually (see below).
+3. **MCP endpoint** — the 10 `memory_*` tools come from `@mem-weave/server`'s built-in `/mcp` (Streamable HTTP). They are reached via the `mcp.memweave` block in `~/.config/opencode/opencode.json` that **you must hand-add once** (see below). The `type` field **must** be `"remote"` — OpenCode's Effect schema only accepts `"remote"`.
 
 **Enable it:**
 
@@ -310,27 +310,26 @@ Then in `~/.config/opencode/opencode.json`:
 
 ```jsonc
 {
-  "plugin": ["@mem-weave/opencode-plugin"]
+  "plugin": ["@mem-weave/opencode-plugin"],
+  "mcp": {
+    "memweave": {
+      "type": "remote",
+      "url": "http://127.0.0.1:3131/mcp",
+      "enabled": true
+    }
+  }
 }
 ```
 
-> **If you have oh-my-openagent**: no `mcp` block needed. oh-my-openagent
-> reads `@mem-weave/opencode-plugin/.mcp.json` and registers the remote
-> endpoint automatically.
+> **The `mcp` block is required** with `type: "remote"`. Other `type` values
+> (`"http"`, `"sse"`, etc.) are silently dropped by OpenCode's schema validator.
 >
-> **If you don't have oh-my-openagent**: add the `mcp` block manually:
->
-> ```jsonc
-> {
->   "mcp": {
->     "memweave": {
->       "type": "remote",
->       "url": "http://127.0.0.1:3131/mcp",
->       "enabled": true
->     }
->   }
-> }
-> ```
+> The plugin also ships a `.mcp.json` at its package root as a backup path
+> via [`oh-my-openagent`](https://github.com/code-yeongyu/oh-my-openagent) —
+> but oh-my-openagent's Claude Code plugin loader depends on
+> `~/.claude/plugins/installed_plugins.json` (Claude Code's plugin DB) which
+> most users don't have. So `.mcp.json` is **not** reliable; hand-editing
+> `mcp.memweave` is the main path.
 
 **What it does (hooks actually called by OpenCode):**
 

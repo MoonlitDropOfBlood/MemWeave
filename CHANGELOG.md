@@ -26,6 +26,32 @@ _No changes yet._
 
 ---
 
+## [0.4.3] — 2026-06-16
+
+### Changed — [@mem-weave/opencode-plugin]
+
+- **`.mcp.json` `type` reverted to `"remote"`** (was `"http"` in 0.4.2). The
+  `type: "http"` value worked in the Claude Code / oh-my-openagent
+  `.mcp.json` convention but is silently dropped by OpenCode's own Effect
+  schema, which only accepts `"remote"` for remote MCP servers. v0.4.2's
+  `type: "http"` therefore produced no error but also no MCP registration
+  when the plugin was used standalone. With `type: "remote"`, oh-my-openagent
+  (when installed) reads the file and registers the endpoint.
+- **README, AGENTS, and plugin AGENTS updated** to be explicit that the
+  *reliable* MCP setup is the user hand-adding `mcp.memweave = { type: "remote", url }`
+  to `~/.config/opencode/opencode.json`. The plugin's `.mcp.json` is kept
+  as a backup path for users with oh-my-openagent + Claude Code's plugin
+  DB installed, but most users won't have that.
+
+### Migration from v0.4.2
+
+If you already have `mcp.memweave = { type: "remote", ... }` in
+`opencode.json`, you do not need to change anything. The user-actionable
+fix is the type field — if you tried `type: "http"`, change it to
+`type: "remote"` and restart OpenCode.
+
+---
+
 ## [0.4.2] — 2026-06-15
 
 ### Added — [@mem-weave/opencode-plugin]

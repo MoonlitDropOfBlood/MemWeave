@@ -90,26 +90,24 @@ OpenCode 客户端：编辑 `~/.config/opencode/opencode.json`：
 
 ```jsonc
 {
-  "plugin": ["@mem-weave/opencode-plugin"]
+  "plugin": ["@mem-weave/opencode-plugin"],
+  "mcp": {
+    "memweave": {
+      "type": "remote",
+      "url": "http://127.0.0.1:3131/mcp",
+      "enabled": true
+    }
+  }
 }
 ```
 
-> 如果你**同时**装了 [`oh-my-openagent`](https://github.com/code-yeongyu/oh-my-openagent)，
-> 它会自动读取 plugin 根目录的 `.mcp.json` 并把 `memweave` 远程端点注册成
-> `${plugin.name}:memweave` —— **无需**手填 `mcp` 段。如果你没装 oh-my-openagent，
-> OpenCode 不会自动加载 plugin 的 `.mcp.json`，需要手填下面这段：
->
-> ```jsonc
-> {
->   "mcp": {
->     "memweave": {
->       "type": "remote",
->       "url": "http://127.0.0.1:3131/mcp",
->       "enabled": true
->     }
->   }
-> }
-> ```
+> **必须**手填 `mcp` 段。OpenCode 不会调 plugin 的 `config` hook（见
+> [OpenCode 插件文档](https://opencode.ai/docs/plugins/)，hooks 列表里**没有**
+> `config`），所以 plugin 无法自己注入 mcp.memweave。**Plugin 也**带一个
+> `.mcp.json` 供 [oh-my-openagent](https://github.com/code-yeongyu/oh-my-openagent)
+> 自动加载，但 oh-my-openagent 实际**依赖** `~/.claude/plugins/installed_plugins.json`
+> 这份 Claude Code plugin DB —— **多数用户** 没装 Claude Code，所以 plugin
+> `.mcp.json` **不可靠**。**主路径是手填** mcp.memweave 段。
 
 ### 方式二：仅 npx 试用
 
@@ -282,8 +280,8 @@ OpenCode 配置（`~/.config/opencode/opencode.json` 的 `mcp` 段）：
 插件 `@mem-weave/opencode-plugin` 安装后做三件事（v0.4+）：
 
 1. **注入记忆** — 每次对话/读文件时，把相关记忆的摘要追加到 system prompt，无需 LLM 主动调工具
-2. **写侧闭环（v0.4 新增）** — 监听 OpenCode 的 `message.updated` 事件，把每条完成的 user / assistant 消息自动上报到 `@mem-weave/server` 写进 `observations` 表（**幂等**：重复消息不会被重复写）
-3. **MCP 端点（v0.4.2 新增）** — plugin 根目录带一个 `.mcp.json`，**当用户同时装 [`oh-my-openagent`](https://github.com/code-yeongyu/oh-my-openagent) 时**，oh-my-openagent 会自动读取并把 `memweave` 远程端点注册成 `${pluginName}:memweave`，**无需手填**。如果不装 oh-my-openagent，则需要手动在 `opencode.json` 写 `mcp.memweave` 段（见下方）。
+2. **写侧闭环** — 监听 OpenCode 的 `message.updated` 事件，把每条完成的 user / assistant 消息自动上报到 `@mem-weave/server` 写进 `observations` 表（**幂等**：重复消息不会被重复写）
+3. **MCP 端点** — MCP 工具（`memory_save` / `memory_recall` / `memory_expand` 等）由 `@mem-weave/server` 内置的 `/mcp` 端点提供，**OpenCode 通过手填的 `mcp.memweave` 段连接**（type **必须**是 `remote` —— OpenCode runtime 的 schema 只接受 `remote`）
 
 **启用方式：**
 
@@ -295,28 +293,23 @@ npm install -g @mem-weave/opencode-plugin
 
 ```jsonc
 {
-  "plugin": ["@mem-weave/opencode-plugin"]
+  "plugin": ["@mem-weave/opencode-plugin"],
+  "mcp": {
+    "memweave": {
+      "type": "remote",
+      "url": "http://127.0.0.1:3131/mcp",
+      "enabled": true
+    }
+  }
 }
 ```
 
-> **如果你装了 oh-my-openagent**：无需在 opencode.json 写 `mcp` 段。
-> oh-my-openagent 会自动读 `@mem-weave/opencode-plugin/.mcp.json`，把
-> `memweave` 远程端点（`http://127.0.0.1:3131/mcp`）注册成
-> `@mem-weave/opencode-plugin:memweave`。
->
-> **如果你没装 oh-my-openagent**：需要手填 `mcp` 段：
->
-> ```jsonc
-> {
->   "mcp": {
->     "memweave": {
->       "type": "remote",
->       "url": "http://127.0.0.1:3131/mcp",
->       "enabled": true
->     }
->   }
-> }
-> ```
+> **必须**手填 `mcp` 段。`type` 必须是 `"remote"`（OpenCode runtime 的 Effect
+> schema 只接受 `"remote"`，不接受 `"http"` / `"sse"` —— 写其他值会被静默丢弃）。
+> Plugin 根目录**也**带一个 `.mcp.json` 作为 backup，**但** oh-my-openagent
+> 实际依赖 `~/.claude/plugins/installed_plugins.json` 这份 Claude Code
+> plugin DB，普通用户**没**装 Claude Code，**.mcp.json 路径不可靠**。**主路径
+> 是手填 mcp.memweave 段**。
 
 **写侧闭环数据流：**
 
