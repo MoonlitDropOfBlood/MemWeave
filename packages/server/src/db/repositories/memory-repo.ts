@@ -173,26 +173,54 @@ export class MemoryRepo {
    * Find a near-duplicate of `input` already in the DB. Returns the
    * candidate memory, or `null` if none qualifies.
    *
-   * Strategy:
-   *   1. BM25 over `memory_fts` using the input's concepts as the query
-   *      (no embedding cost; FTS5 is < 1ms for a few MB of memories).
-   *      We OR the concepts (any-concept match) so we get a candidate set.
-   *   2. Take top-5 candidates within the same tenant.
-   *   3. For each, compute Jaccard similarity on the concepts set.
-   *   4. If best Jaccard >= DEDUP_JACCARD_THRESHOLD AND same `type`,
-   *      that's a duplicate.
+   * Strategy (two-tier):
+   *   Tier 1: exact content hash match (for callers that pass
+   *     `concepts: []` — typically MCP tools / scripted automation).
+   *     If a memory with the same `type` AND content (after
+   *     whitespace-normalization) exists, that's a duplicate. This
+   *     is cheap (indexed `id` lookup on a per-type scan) and catches
+   *     the "same fact re-saved verbatim" case.
+   *   Tier 2: Jaccard on concepts (for callers that pass proper
+   *     concepts — the typical LLM-driven path). BM25 over
+   *     `memory_fts` using the input's concepts as the query, then
+   *     Jaccard >= 0.8 on the candidate concepts set.
    *
-   * Why OR not AND on concepts? The new save's concepts might not all
-   * appear in the old memory (e.g. new concept added). We want a
-   * candidate pool to score with Jaccard, not an exact match.
-   * Why not BM25 score alone? FTS5 ranks by term frequency, not by
-   * "this is the same fact". A memory about "TypeScript" would BM25-match
-   * a memory about "TypeScript generics" highly, but they're not duplicates.
-   * Concepts-based Jaccard catches the actual semantic overlap.
+   * Both tiers require same `type` (a "fact" is never a duplicate of a
+   * "decision").
+   *
+   * Why this two-tier approach? Before this change, callers that
+   * passed `concepts: []` (e.g. the MCP `memory_save` tool when invoked
+   * from a custom client, the OpenCode plugin's write-side closure,
+   * or test scripts) bypassed dedup entirely — they could create
+   * the same memory 3, 10, 100 times. Tier 1 catches the verbatim case
+   * without any client cooperation. Tier 2 remains the smart path
+   * for clients that supply good concepts.
    */
   private findNearDuplicate(input: CreateMemoryInput): MemoryRecord | null {
-    // Query with concepts only — title is too noisy. Sanitize to FTS5-safe
-    // tokens (lowercase, only word chars and hyphens/underscores).
+    // ── Tier 1: exact content match (whitespace-normalized) ───────────
+    // Catches the "I called memory_save 5 times with the same text"
+    // case regardless of concepts. Whitespace-normalize so a few
+    // stray spaces don't bypass dedup. Skip if the input has zero
+    // content (nothing to compare).
+    const normalized = normalizeContent(input.content);
+    if (normalized.length > 0) {
+      // SQLite LIKE with normalized text — no FTS5 needed for an exact
+      // string match, and we have to scan all rows of the same type
+      // anyway because we're matching on the post-normalize form.
+      // Limit scan to the same tenant + type to keep the scan bounded.
+      const candidates = this.db.prepare(`
+        SELECT id, content
+        FROM memories
+        WHERE tenant_id = ? AND type = ? AND deleted_at IS NULL
+      `).all(input.tenantId, input.type) as Array<{ id: string; content: string }>;
+      for (const row of candidates) {
+        if (normalizeContent(row.content) === normalized) {
+          return this.getById(input.tenantId, row.id) ?? null;
+        }
+      }
+    }
+
+    // ── Tier 2: Jaccard on concepts (only when concepts are supplied) ──
     const queryTokens = input.concepts
       .map((c) => c.toLowerCase())
       .filter((t) => t.length > 0 && /^[a-z0-9_-]+$/.test(t));
@@ -389,4 +417,15 @@ function jaccardSimilarity(a: Set<string>, b: Set<string>): number {
   for (const x of a) if (b.has(x)) intersection++;
   const union = a.size + b.size - intersection;
   return union === 0 ? 0 : intersection / union;
+}
+
+/**
+ * Normalize a memory's content for exact-match dedup comparison.
+ * Collapses all whitespace to a single space, trims, and lower-cases.
+ * This catches the common case where a re-save differs only in
+ * trailing newline or extra spaces — and keeps the comparison
+ * deterministic for the verbatim dedup path.
+ */
+function normalizeContent(s: string): string {
+  return s.replace(/\s+/g, ' ').trim().toLowerCase();
 }

@@ -26,6 +26,52 @@ _No changes yet._
 
 ---
 
+## [0.5.2] — 2026-06-16
+
+### Fixed — [@mem-weave/server]
+
+- **Memory dedup now catches the empty-concepts case.** The previous
+  dedup gate (FTS5 BM25 + Jaccard on concepts) **silently bypassed**
+  any call to `memory_save` that passed `concepts: []` — which is the
+  default for the MCP `memory_save` tool, the OpenCode plugin's
+  write-side closure, and any scripted automation. Result: the same
+  memory could be inserted N times verbatim.
+
+  The dedup logic now has two tiers:
+  1. **Tier 1 (new)**: exact content match after whitespace
+     normalization, scoped to the same tenant + type. Catches the
+     "same fact re-saved verbatim" case regardless of concepts.
+  2. **Tier 2 (unchanged)**: BM25 over `memory_fts` using the input's
+     concepts as the query, then Jaccard >= 0.8 on the candidate
+     concepts set. Still the smart path for clients that supply
+     good concepts.
+
+  Both tiers require the same `type` (a "fact" is never a
+  duplicate of a "decision").
+
+### Migration from v0.5.1
+
+No action required. The behavior change is purely additive: any
+caller that was already supplying good concepts still gets
+Jaccard-based dedup; callers that were bypassing dedup entirely
+(usually because `concepts: []`) now get exact-content dedup.
+
+End-to-end verified: 3 consecutive `memory_save` calls with the
+same `content` and `concepts: []` now all return the same memory id
+(tier-1 hit, the existing memory is reinforced). The
+@mem-weave/opencode-plugin@0.4.2 write-side closure therefore
+no longer creates duplicate observations on OpenCode restart.
+
+### Database cleanup
+
+Existing duplicate memories can be soft-deleted with the script
+`scripts/cleanup-duplicates.js` (or by running the equivalent
+SQL UPDATE). Duplicates are detected by exact content match
+within the same `type`; the oldest row is kept, the rest are
+soft-deleted (`deleted_at = now`).
+
+---
+
 ## [0.5.1] — 2026-06-16
 
 ### Fixed — [@mem-weave/server]
