@@ -19,6 +19,16 @@ TypeScript monorepo with two published npm packages and a web app:
   `~/.claude/plugins/installed_plugins.json` — usually absent). Users must
   hand-add the `mcp.memweave` block to `opencode.json` with `type: "remote"`
   (the only type OpenCode's Effect schema accepts for remote MCP servers).
+- **`packages/codex-plugin/`** — OpenAI Codex plugin (v0.5.3+). Pure-config
+  plugin (no SDK, no runtime code) shipped as a directory installable via
+  `codex plugin install`. Auto-exposes the 10 `memory_*` MCP tools through
+  Codex's MCP HTTP transport (`.mcp.json` uses `type: "http"` — Codex's
+  schema, NOT OpenCode's `type: "remote"`), and writes the last assistant
+  message back to the server via a `Stop` lifecycle hook
+  (`hooks/stop.mjs`, cross-platform Node; `.sh` / `.cmd` are thin wrappers).
+  Idempotent on `(sessionId, messageId)` where `messageId = sha256(sessionId
+  + "turn-" + turnId + assistantContent)`. Requires `@mem-weave/server@0.5.3+`
+  (the `SourceClient` enum gained `'codex'` in v0.5.3).
 - **`web/`** — React 18 + Vite admin UI ("Calm Memory Atlas"). Browsing,
   searching, debugging, and operating the memory system.
 
@@ -55,6 +65,17 @@ memweave/
 │       └── src/
 │           ├── index.ts              # MemweaveInjectPlugin (4 hooks: config/event/system.transform/tool.before)
 │           └── client.ts             # MemweaveInjectClient (POST /inject, /sessions, /observations)
+│   └── codex-plugin/                 # @mem-weave/codex-plugin (directory, NOT published)
+│       ├── .codex-plugin/
+│       │   └── plugin.json           # Codex manifest
+│       ├── .mcp.json                 # type: "http" → http://127.0.0.1:3131/mcp
+│       ├── hooks/
+│       │   ├── hooks.json            # Stop event binding
+│       │   ├── stop.mjs              # Cross-platform Node: stdin → POST sessions + observations
+│       │   ├── stop.sh               # Unix thin wrapper → stop.mjs
+│       │   └── stop.cmd              # Windows thin wrapper → stop.mjs
+│       ├── README.md                 # Install + usage
+│       └── package.json              # Metadata only (private, not published)
 ├── web/                              # React 18 + Vite admin UI (7 pages + 7 CSS modules)
 │   └── src/{pages,components,api,lib,theme}/
 ├── tests/                            # Server vitest tests
@@ -106,7 +127,7 @@ memweave/
 - **No external LLM required**: `embedding.dimensions: 0` disables the vector layer; `providers/llm/noop.ts` makes consolidation a pure rule-based pass.
 - **Multi-tenant by default**: every repository method takes `tenantId`; `auth.ts` middleware validates API key against `tenants.api_key_hash`.
 - **Idempotent write endpoints**: the OpenCode plugin may retry (restarts, network blips). `POST /api/v1/sessions` is idempotent on `sessionId`; `POST /api/v1/observations` is idempotent on `(sessionId, messageId)` via the JSON envelope in `tool_input`.
-- **Two publishable packages**: `@mem-weave/server` and `@mem-weave/opencode-plugin`. The standalone `@mem-weave/mcp` is **retired** — do not recreate it.
+- **Two publishable packages**: `@mem-weave/server` and `@mem-weave/opencode-plugin`. The standalone `@mem-weave/mcp` is **retired** — do not recreate it. The Codex plugin (`packages/codex-plugin/`) is a **directory**, not an npm package — install via `codex plugin install <path>`.
 
 ## ANTI-PATTERNS (THIS PROJECT)
 
