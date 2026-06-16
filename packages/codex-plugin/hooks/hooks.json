@@ -1,0 +1,18 @@
+{
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$PLUGIN_DIR/hooks/stop.sh",
+            "commandWindows": "$PLUGIN_DIR\\hooks\\stop.cmd",
+            "timeout": 30,
+            "statusMessage": "MemWeave: writing session to memory"
+          }
+        ]
+      }
+    ]
+  }
+}
+

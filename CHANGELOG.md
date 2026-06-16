@@ -22,7 +22,38 @@ touch both (or core/shared infrastructure).
 
 ## [Unreleased]
 
-_No changes yet._
+### Added — Codex plugin
+
+- **MemWeave for OpenAI Codex** — `packages/codex-plugin/`
+  - Ships `.codex-plugin/plugin.json` manifest + `.mcp.json` pointing
+    at the running `@mem-weave/server`'s `http://127.0.0.1:3131/mcp`
+    endpoint, so Codex auto-loads the 10 `memory_*` tools
+  - `Stop` lifecycle hook (`hooks/stop.mjs`, cross-platform Node;
+    `hooks/stop.sh` / `hooks/stop.cmd` are thin wrappers) that
+    upserts the session and writes the last assistant message as an
+    idempotent observation
+  - Install: `codex plugin install /path/to/MemWeave/packages/codex-plugin`
+  - Full design spec: `docs/superpowers/specs/2026-06-16-codex-plugin-design.md`
+
+---
+
+## [0.5.3] — 2026-06-16
+
+### Added — [@mem-weave/server]
+
+- **New `source` value: `codex`.** The `SourceClient` enum
+  (`packages/server/src/core/types.ts`) now includes `'codex'`
+  alongside `'opencode' | 'cursor' | 'claude_code' | 'rest_api'`.
+  This is required by the new Codex plugin so that
+  `POST /api/v1/sessions` with `{ source: "codex" }` passes Zod
+  validation. No DB schema change (the `sessions.source` column is
+  `TEXT` with no CHECK constraint), no migration needed.
+
+### Migration from v0.5.2
+
+No action required. The new value is purely additive — existing
+callers using any of the original four source values still work
+unchanged.
 
 ---
 

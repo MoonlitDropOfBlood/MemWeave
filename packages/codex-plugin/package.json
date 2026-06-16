@@ -1,0 +1,14 @@
+{
+  "name": "@mem-weave/codex-plugin",
+  "version": "0.1.0",
+  "description": "OpenAI Codex plugin for MemWeave. Auto-exposes 10 memory_* MCP tools and writes completed turns back to the server on Stop.",
+  "license": "MIT",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test:hook": "node hooks/stop.mjs < /dev/null"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

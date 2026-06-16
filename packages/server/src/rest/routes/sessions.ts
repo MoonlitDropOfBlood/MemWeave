@@ -13,7 +13,7 @@ const IdParamSchema = z.object({ id: z.string().min(1) });
 
 const CreateSessionSchema = z.object({
   sessionId: z.string().min(1).max(200),
-  source: z.enum(['opencode', 'cursor', 'claude_code', 'rest_api']),
+  source: z.enum(['opencode', 'cursor', 'claude_code', 'codex', 'rest_api']),
   title: z.string().min(1).max(500),
   deviceId: z.string().min(1).max(200).optional()
 });
