@@ -4,6 +4,8 @@
   gap: var(--space-4);
   height: 100%;
   margin: calc(-1 * var(--space-6));
+  overflow: hidden;
+  min-height: 0;
 }
 
 .controls {
@@ -116,6 +118,9 @@
   background: var(--bg);
   position: relative;
   overflow: hidden;
+  min-height: 0;
+  width: 100%;
+  height: 100%;
 }
 
 .loading,
@@ -133,6 +138,7 @@
 
 /* ReactFlow container — fill the canvas area */
 .flowWrap {
+  position: relative;
   width: 100%;
   height: 100%;
 }
