@@ -1,15 +1,32 @@
-import { useParams } from 'react-router-dom';
+import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
+import { useMemo, useCallback, useState, useEffect } from 'react';
+import {
+  ReactFlow,
+  Background,
+  Controls,
+  MiniMap,
+  Handle,
+  Position,
+  MarkerType,
+  type Node,
+  type Edge,
+  type NodeProps,
+  BackgroundVariant,
+} from '@xyflow/react';
+import '@xyflow/react/dist/style.css';
 import { api } from '../api/client';
 import { useLocale } from '../lib/i18n';
-import type { GraphResponse } from '../api/types';
-import { useState } from 'react';
-import { TierBadge, TypeBadge } from '../components/common/TypeBadge';
+import type { GraphResponse, EdgeType, MemoryType, MemoryTier } from '../api/types';
 import { Dropdown } from '../components/common/Dropdown';
 import styles from './GraphPage.module.css';
 
-const ALL_EDGE_TYPES = ['causes', 'enables', 'contradicts', 'supersedes', 'references', 'related_to', 'before', 'after', 'duplicates', 'refines'] as const;
-const EDGE_COLOR: Record<typeof ALL_EDGE_TYPES[number], string> = {
+const ALL_EDGE_TYPES: EdgeType[] = [
+  'causes', 'enables', 'contradicts', 'supersedes', 'references',
+  'related_to', 'before', 'after', 'duplicates', 'refines',
+];
+
+const EDGE_COLOR: Record<EdgeType, string> = {
   causes: 'var(--edge-causes)',
   enables: 'var(--edge-enables)',
   contradicts: 'var(--edge-contradicts)',
@@ -19,32 +36,200 @@ const EDGE_COLOR: Record<typeof ALL_EDGE_TYPES[number], string> = {
   before: 'var(--edge-before)',
   after: 'var(--edge-after)',
   duplicates: 'var(--edge-duplicates)',
-  refines: 'var(--edge-refines)'
+  refines: 'var(--edge-refines)',
 };
+
+const EDGE_LABEL: Record<EdgeType, string> = {
+  causes: 'causes',
+  enables: 'enables',
+  contradicts: 'contradicts',
+  supersedes: 'supersedes',
+  references: 'references',
+  related_to: 'related',
+  before: 'before',
+  after: 'after',
+  duplicates: 'duplicates',
+  refines: 'refines',
+};
+
+// Read the CSS variable at runtime so we hand hex/rgb to @xyflow
+// (it can't resolve CSS vars in inline styles).
+function cssVar(name: string): string {
+  return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+}
+
+type MemoryNodeData = {
+  title: string;
+  type: MemoryType;
+  tier: MemoryTier;
+  isCenter: boolean;
+  isDimmed: boolean;
+};
+
+function MemoryNode({ id, data }: NodeProps<Node<MemoryNodeData>>) {
+  const navigate = useNavigate();
+  const tierColor: Record<MemoryTier, string> = {
+    short: cssVar('--tier-short'),
+    medium: cssVar('--tier-medium'),
+    long: cssVar('--tier-long'),
+  };
+  const go = useCallback(() => navigate(`/memories/${id}`), [navigate, id]);
+  return (
+    <div
+      className={`${styles.node} ${data.isCenter ? styles.nodeCenter : ''} ${data.isDimmed ? styles.nodeDimmed : ''}`}
+      style={{ borderLeftColor: tierColor[data.tier] }}
+      onClick={go}
+      role="button"
+      tabIndex={0}
+      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') go(); }}
+    >
+      <Handle type="target" position={Position.Top} className={styles.handle} />
+      <Handle type="source" position={Position.Bottom} className={styles.handle} />
+      <div className={styles.nodeType}>{data.type}</div>
+      <div className={styles.nodeTitle}>{data.title}</div>
+    </div>
+  );
+}
+
+const nodeTypes = { memory: MemoryNode };
 
 export function GraphPage() {
   const { t } = useLocale();
   const { id } = useParams<{ id: string }>();
   const [depth, setDepth] = useState(1);
   const [direction, setDirection] = useState<'in' | 'out' | 'both'>('both');
-  const [selectedTypes, setSelectedTypes] = useState<Set<string>>(new Set(ALL_EDGE_TYPES));
+  const [selectedTypes, setSelectedTypes] = useState<Set<EdgeType>>(new Set(ALL_EDGE_TYPES));
 
   const graphQ = useQuery<GraphResponse>({
     queryKey: ['memory-graph', id, depth, direction],
     queryFn: () => {
       const types = Array.from(selectedTypes).join(',');
-      return api.get<GraphResponse>(`/memories/${id}/graph?depth=${depth}&direction=${direction}&edgeTypes=${types}`);
-    }
+      return api.get<GraphResponse>(
+        `/memories/${id}/graph?depth=${depth}&direction=${direction}&edgeTypes=${types}`
+      );
+    },
+    enabled: Boolean(id),
   });
 
-  const toggleType = (t: string) => {
+  const toggleType = useCallback((et: EdgeType) => {
     setSelectedTypes((prev) => {
       const next = new Set(prev);
-      if (next.has(t)) next.delete(t);
-      else next.add(t);
+      if (next.has(et)) next.delete(et);
+      else next.add(et);
       return next;
     });
-  };
+  }, []);
+
+  // Pick a reasonable layout: center the root, BFS layers around it.
+  // For each layer, distribute nodes evenly on a circle around the center
+  // of that layer. Simple and predictable for 1-3 depth.
+  const layout = useMemo(() => {
+    const data = graphQ.data;
+    if (!data || !id) return { nodes: [] as Node<MemoryNodeData>[], edges: [] as Edge[] };
+    const nodeById = new Map(data.nodes.map((n) => [n.id, n]));
+    if (!nodeById.has(id)) return { nodes: [], edges: [] };
+
+    const adjOut = new Map<string, Set<string>>();
+    const adjIn = new Map<string, Set<string>>();
+    for (const n of data.nodes) { adjOut.set(n.id, new Set()); adjIn.set(n.id, new Set()); }
+    for (const e of data.edges) {
+      adjOut.get(e.fromMemoryId)?.add(e.toMemoryId);
+      adjIn.get(e.toMemoryId)?.add(e.fromMemoryId);
+    }
+
+    // BFS from `id`, honoring direction
+    const layer = new Map<string, number>();
+    layer.set(id, 0);
+    const queue: string[] = [id];
+    while (queue.length) {
+      const cur = queue.shift()!;
+      const curLayer = layer.get(cur)!;
+      if (curLayer >= depth) continue;
+      const neighbours: string[] = [];
+      if (direction === 'out' || direction === 'both') {
+        for (const n of adjOut.get(cur) ?? []) neighbours.push(n);
+      }
+      if (direction === 'in' || direction === 'both') {
+        for (const n of adjIn.get(cur) ?? []) neighbours.push(n);
+      }
+      for (const n of neighbours) {
+        if (!layer.has(n)) { layer.set(n, curLayer + 1); queue.push(n); }
+      }
+    }
+
+    // Group by layer
+    const byLayer = new Map<number, string[]>();
+    for (const [nid, l] of layer) {
+      if (!byLayer.has(l)) byLayer.set(l, []);
+      byLayer.get(l)!.push(nid);
+    }
+
+    // Lay out — center on (0,0), layer L is a circle of radius 240 * L,
+    // nodes evenly spaced. Within a layer, leave a 60-degree gap at the
+    // top so the center node's vertical handle has room.
+    const NODE_W = 180;
+    const NODE_H = 70;
+    const positioned: Node<MemoryNodeData>[] = [];
+    const layerRadii = [0, 240, 420, 580];
+    const rootNode = nodeById.get(id!)!;
+    for (const [l, ids] of byLayer) {
+      if (l === 0) {
+        positioned.push({
+          id: id!,
+          type: 'memory',
+          position: { x: -NODE_W / 2, y: -NODE_H / 2 },
+          data: { title: rootNode.title, type: rootNode.type, tier: rootNode.tier, isCenter: true, isDimmed: false },
+        });
+        continue;
+      }
+      const r = layerRadii[Math.min(l, layerRadii.length - 1)] ?? 580;
+      ids.forEach((nid, i) => {
+        const t01 = (i + 1) / (ids.length + 1);
+        // Distribute evenly around a full circle; start at top (12 o'clock).
+        const angle = -Math.PI / 2 + 2 * Math.PI * t01;
+        const x = Math.cos(angle) * r - NODE_W / 2;
+        const y = Math.sin(angle) * r - NODE_H / 2;
+        const mem = nodeById.get(nid)!;
+        positioned.push({
+          id: nid,
+          type: 'memory',
+          position: { x, y },
+          data: { title: mem.title, type: mem.type, tier: mem.tier, isCenter: false, isDimmed: false },
+        });
+      });
+    }
+
+    // Build xyflow edges. Filter by selected edge types AND only edges where
+    // both endpoints are in the positioned set (BFS-bounded).
+    const presentIds = new Set(positioned.map((n) => n.id));
+    const edges: Edge[] = data.edges
+      .filter((e) => presentIds.has(e.fromMemoryId) && presentIds.has(e.toMemoryId))
+      .filter((e) => selectedTypes.has(e.type))
+      .map((e) => ({
+        id: e.id,
+        source: e.fromMemoryId,
+        target: e.toMemoryId,
+        type: 'smoothstep',
+        label: EDGE_LABEL[e.type],
+        animated: e.type === 'contradicts',
+        style: { stroke: cssVar(stripVar(EDGE_COLOR[e.type])), strokeWidth: 1.5 },
+        labelStyle: { fontSize: 10, fontFamily: 'var(--font-mono)', fill: cssVar('--text-muted') },
+        labelBgStyle: { fill: cssVar('--surface'), fillOpacity: 0.85 },
+        labelBgPadding: [4, 2] as [number, number],
+        labelBgBorderRadius: 4,
+        markerEnd: { type: MarkerType.ArrowClosed, color: cssVar(stripVar(EDGE_COLOR[e.type])) },
+      }));
+
+    return { nodes: positioned, edges };
+  }, [graphQ.data, id, depth, direction, selectedTypes]);
+
+  // Theme: re-read CSS vars on mount so dark/light switch re-styles edges
+  const [, force] = useState(0);
+  useEffect(() => {
+    const obs = new MutationObserver(() => force((n) => n + 1));
+    obs.observe(document.documentElement, { attributes: true, attributeFilter: ['class', 'data-theme'] });
+    return () => obs.disconnect();
+  }, []);
 
   return (
     <div className={styles.page}>
@@ -72,7 +257,7 @@ export function GraphPage() {
             options={[
               { value: 'both', label: t('graphPage.option.both') },
               { value: 'out',  label: t('graphPage.option.outgoing') },
-              { value: 'in',   label: t('graphPage.option.incoming') }
+              { value: 'in',   label: t('graphPage.option.incoming') },
             ]}
           />
         </label>
@@ -80,17 +265,24 @@ export function GraphPage() {
         <div className={styles.field}>
           <span>{t('graphPage.edgeTypes')}</span>
           <div className={styles.edgeTypeList}>
-            {ALL_EDGE_TYPES.map((t) => (
-              <label key={t} className={styles.edgeType}>
+            {ALL_EDGE_TYPES.map((et) => (
+              <label key={et} className={styles.edgeType}>
                 <input
                   type="checkbox"
-                  checked={selectedTypes.has(t)}
-                  onChange={() => toggleType(t)}
+                  checked={selectedTypes.has(et)}
+                  onChange={() => toggleType(et)}
                 />
-                <span style={{ borderColor: EDGE_COLOR[t] }}>{t}</span>
+                <span style={{ borderColor: EDGE_COLOR[et] }}>{et}</span>
               </label>
             ))}
           </div>
+        </div>
+
+        <div className={styles.legend}>
+          <span className={styles.legendLabel}>Tier</span>
+          <div className={styles.legendRow}><span className={styles.legendDot} style={{ background: 'var(--tier-short)' }} /> short</div>
+          <div className={styles.legendRow}><span className={styles.legendDot} style={{ background: 'var(--tier-medium)' }} /> medium</div>
+          <div className={styles.legendRow}><span className={styles.legendDot} style={{ background: 'var(--tier-long)' }} /> long</div>
         </div>
       </aside>
 
@@ -99,55 +291,43 @@ export function GraphPage() {
           <div className={styles.loading}><span className="spinner" /> {t('graphPage.loading')}</div>
         ) : graphQ.error ? (
           <div className={styles.error}>{t('graphPage.error')} {(graphQ.error as Error).message}</div>
-        ) : !graphQ.data || graphQ.data.nodes.length === 0 ? (
+        ) : !graphQ.data || layout.nodes.length === 0 ? (
           <div className={styles.empty}>{t('graphPage.empty')}</div>
         ) : (
-          <div className={styles.graphWrap}>
-            {graphQ.data.nodes.map((n, i) => {
-              const angle = (i / Math.max(1, graphQ.data!.nodes.length)) * 2 * Math.PI;
-              const radius = 180;
-              const x = 50 + Math.cos(angle) * radius;
-              const y = 50 + Math.sin(angle) * radius;
-              const isCenter = n.id === id;
-              return (
-                <div
-                  key={n.id}
-                  className={isCenter ? `${styles.node} ${styles.nodeCenter}` : styles.node}
-                  style={{ left: `${x}%`, top: `${y}%` }}
-                >
-                  <div className={styles.nodeBadges}>
-                    <TypeBadge type={n.type} />
-                    <TierBadge tier={n.tier} />
-                  </div>
-                  <div className={styles.nodeTitle}>{n.title}</div>
-                </div>
-              );
-            })}
-            {graphQ.data.edges.map((e) => {
-              // Simple line rendering: SVG overlay
-              const fromIdx = graphQ.data!.nodes.findIndex((n) => n.id === e.fromMemoryId);
-              const toIdx = graphQ.data!.nodes.findIndex((n) => n.id === e.toMemoryId);
-              if (fromIdx < 0 || toIdx < 0) return null;
-              const fromAngle = (fromIdx / graphQ.data!.nodes.length) * 2 * Math.PI;
-              const toAngle = (toIdx / graphQ.data!.nodes.length) * 2 * Math.PI;
-              const r = 180;
-              const fx = 50 + Math.cos(fromAngle) * r;
-              const fy = 50 + Math.sin(fromAngle) * r;
-              const tx = 50 + Math.cos(toAngle) * r;
-              const ty = 50 + Math.sin(toAngle) * r;
-              return (
-                <svg key={e.id} className={styles.edges} viewBox="0 0 100 100" preserveAspectRatio="none">
-                  <line
-                    x1={fx} y1={fy} x2={tx} y2={ty}
-                    style={{ stroke: EDGE_COLOR[e.type] }}
-                    className={styles.edge}
-                  />
-                </svg>
-              );
-            })}
+          <div className={styles.flowWrap} data-testid="graph-flow">
+            <ReactFlow
+              nodes={layout.nodes}
+              edges={layout.edges}
+              nodeTypes={nodeTypes}
+              fitView
+              fitViewOptions={{ padding: 0.2, maxZoom: 1.2 }}
+              minZoom={0.1}
+              maxZoom={2}
+              proOptions={{ hideAttribution: true }}
+              defaultEdgeOptions={{ type: 'smoothstep' }}
+            >
+              <Background variant={BackgroundVariant.Dots} gap={24} size={1} />
+              <Controls showInteractive={false} />
+              <MiniMap
+                nodeColor={(n) => {
+                  const tier = (n.data as MemoryNodeData | undefined)?.tier;
+                  if (tier === 'short') return cssVar('--tier-short');
+                  if (tier === 'medium') return cssVar('--tier-medium');
+                  if (tier === 'long') return cssVar('--tier-long');
+                  return cssVar('--text-muted');
+                }}
+                pannable
+                zoomable
+              />
+            </ReactFlow>
           </div>
         )}
       </main>
     </div>
   );
+}
+
+// Helper: turn "var(--edge-causes)" into "--edge-causes" so cssVar can resolve it
+function stripVar(s: string): string {
+  return s.replace(/^var\(/, '').replace(/\)$/, '');
 }
