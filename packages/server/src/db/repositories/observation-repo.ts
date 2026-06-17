@@ -9,6 +9,8 @@ export interface CreateObservationInput {
   toolInput: string | null;
   toolOutput: string | null;
   memoryId: string | null;
+  /** v0.5.4: JSON-serialized array of { key, value } scope tags. Optional for back-compat. */
+  scopes?: string;
 }
 
 export interface ObservationRecord {
@@ -22,6 +24,8 @@ export interface ObservationRecord {
   timestamp: number;
   memoryId: string | null;
   processed: boolean;
+  /** v0.5.4: JSON-serialized array of { key, value } scope tags. */
+  scopes: string;
 }
 
 interface ObservationRow {
@@ -35,6 +39,7 @@ interface ObservationRow {
   timestamp: number;
   memory_id: string | null;
   processed: number;
+  scopes_json: string;
 }
 
 export class ObservationRepo {
@@ -43,10 +48,11 @@ export class ObservationRepo {
   create(input: CreateObservationInput): ObservationRecord {
     const id = randomUUID();
     const now = Date.now();
+    const scopes = input.scopes ?? '[]';
     this.db.prepare(`
-      INSERT INTO observations (id, session_id, tenant_id, hook_type, tool_name, tool_input, tool_output, timestamp, memory_id, processed)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
-    `).run(id, input.sessionId, input.tenantId, input.hookType, input.toolName, input.toolInput, input.toolOutput, now, input.memoryId);
+      INSERT INTO observations (id, session_id, tenant_id, hook_type, tool_name, tool_input, tool_output, timestamp, memory_id, processed, scopes_json)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?)
+    `).run(id, input.sessionId, input.tenantId, input.hookType, input.toolName, input.toolInput, input.toolOutput, now, input.memoryId, scopes);
 
     return {
       id,
@@ -58,7 +64,8 @@ export class ObservationRepo {
       toolOutput: input.toolOutput,
       timestamp: now,
       memoryId: input.memoryId,
-      processed: false
+      processed: false,
+      scopes
     };
   }
 
@@ -128,7 +135,8 @@ export class ObservationRepo {
       toolOutput: row.tool_output,
       timestamp: row.timestamp,
       memoryId: row.memory_id,
-      processed: row.processed === 1
+      processed: row.processed === 1,
+      scopes: row.scopes_json ?? '[]'
     };
   }
 }

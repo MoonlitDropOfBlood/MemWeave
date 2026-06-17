@@ -1,13 +1,21 @@
 import type { Db } from '../db/database.js';
 import { transaction } from '../db/database.js';
 import { logger } from '../server/logger.js';
+import { MemoryRepo } from '../db/repositories/memory-repo.js';
+import { evaluateObservation, type ValueGateResult } from './value-gate.js';
+import type { ScopeTag, MemoryType } from '../core/types.js';
 
 export interface ConsolidationResult {
+  /** Observations promoted to memories. */
   promoted: number;
+  /** Short-tier memories promoted to medium tier. */
+  tierPromoted: number;
   evicted: number;
   merged: number;
-  /** Ids of memories promoted from short to medium. */
+  /** Ids of observations promoted to new memories. */
   promotedIds: string[];
+  /** Ids of memories promoted short -> medium tier. */
+  tierPromotedIds: string[];
   /** Ids of memories soft-deleted. */
   evictedIds: string[];
   /** Ids of memory pairs merged (each inner array is [survivor, absorbed]). */
@@ -40,9 +48,11 @@ export function runConsolidation(
   if (consolidationInFlight) {
     return {
       promoted: 0,
+      tierPromoted: 0,
       evicted: 0,
       merged: 0,
       promotedIds: [],
+      tierPromotedIds: [],
       evictedIds: [],
       mergedPairs: [],
       summary: 'Skipped: another consolidation is already running.'
@@ -63,9 +73,11 @@ function runConsolidationInner(
 ): ConsolidationResult {
   const result: ConsolidationResult = {
     promoted: 0,
+    tierPromoted: 0,
     evicted: 0,
     merged: 0,
     promotedIds: [],
+    tierPromotedIds: [],
     evictedIds: [],
     mergedPairs: [],
     summary: ''
@@ -74,6 +86,18 @@ function runConsolidationInner(
 
   try {
     const now = Date.now();
+
+    // 0. Promote unprocessed observations into memories. Runs BEFORE
+    //    evict/promote-tier/merge so the new memories participate in
+    //    the same eviction and merge passes (a buggy observation
+    //    that gets promoted can still be evicted or merged away on
+    //    the same run).
+    if (!options.dryRun) {
+      const promotedObs = promoteObservationsToMemories(db, tenantId);
+      result.promoted = promotedObs.length;
+      result.promotedIds = promotedObs;
+    }
+
 
     // 1. Evict short-term: strength < 0.1 AND age > 7 days AND 0 access
     const toEvict = db.prepare(`
@@ -109,8 +133,8 @@ function runConsolidationInner(
         }
       });
     }
-    result.promoted = toPromote.length;
-    result.promotedIds = toPromote.map((r) => r.id);
+    result.tierPromoted = toPromote.length;
+    result.tierPromotedIds = toPromote.map((r) => r.id);
 
     // 3. Merge near-duplicates. Reuses the Jaccard-on-concepts logic
     //    that `MemoryRepo.create` uses, but operating on existing rows.
@@ -129,7 +153,7 @@ function runConsolidationInner(
     }
 
     result.summary =
-      `Evicted ${result.evicted}, promoted ${result.promoted}, merged ${result.merged} pairs`;
+      `Promoted ${result.promoted} obs to memory, evicted ${result.evicted}, tier-promoted ${result.tierPromoted}, merged ${result.merged} pairs`;
   } catch (err) {
     logger.error({ err }, 'consolidation failed');
   }
@@ -256,4 +280,201 @@ function jaccardSimilarity(a: Set<string>, b: Set<string>): number {
   for (const x of a) if (b.has(x)) intersection++;
   const union = a.size + b.size - intersection;
   return union === 0 ? 0 : intersection / union;
+}
+
+/**
+ * Phase 0: promote unprocessed `observations` into memories.
+ *
+ * Each observation is run through `evaluateObservation` (the
+ * value-gate) to decide whether it carries memory-worthy signal.
+ * Promoted observations are inserted as memories via `MemoryRepo.create`
+ * (so the write-side dedup gate applies), and the observation is
+ * linked to the new memory + marked `processed = 1`. Observations
+ * the value-gate rejects are also marked `processed = 1` so the
+ * next run does not re-evaluate them - we never want to spend
+ * CPU on the same uninteresting message twice.
+ *
+ * The new memory inherits the observation's `scopes_json` (project
+ * / domain / topic tags the client attached) so cross-project
+ * recall and search filters work without re-classification.
+ *
+ * Returns the list of new memory ids.
+ */
+function promoteObservationsToMemories(db: Db, tenantId: string): string[] {
+  const repo = new MemoryRepo(db);
+  const newMemoryIds: string[] = [];
+
+  // Read unprocessed observations oldest first. Cap at 200 per
+  // run so a backlog of thousands doesn't lock the DB for minutes.
+  const BATCH_LIMIT = 200;
+  const rows = db.prepare(`
+    SELECT id, session_id, hook_type, tool_name, tool_input, tool_output,
+           scopes_json
+    FROM observations
+    WHERE tenant_id = ? AND processed = 0 AND memory_id IS NULL
+    ORDER BY timestamp ASC
+    LIMIT ?
+  `).all(tenantId, BATCH_LIMIT) as Array<{
+    id: string;
+    session_id: string;
+    hook_type: string;
+    tool_name: string | null;
+    tool_input: string | null;
+    tool_output: string | null;
+    scopes_json: string;
+  }>;
+
+  if (rows.length === 0) return newMemoryIds;
+
+  // Track which observation ids we've processed in this run so the
+  // bulk UPDATE at the end touches only those rows (avoids losing
+  // observations other instances might be processing concurrently).
+  const processedIds: string[] = [];
+  // Track which observations became memories (for the audit log).
+  const promotedPairs: Array<{ obsId: string; memId: string; reason: string }> = [];
+
+  for (const obs of rows) {
+    const toolInput = parseJsonSafe(obs.tool_input);
+    const scopes = parseJsonSafe<ScopeTag[]>(obs.scopes_json) ?? [];
+
+    // Map observation fields to the value-gate input shape.
+    // For chat.user / chat.assistant hooks, the user/assistant text
+    // is in `tool_output` (where the OpenCode plugin writes the
+    // message body). For chat.tool hooks, the input/output come
+    // from the tool wrapper.
+    const userPrompt = obs.hook_type === 'chat.user' || obs.hook_type === 'prompt_submit'
+      ? obs.tool_output ?? ''
+      : extractUserPrompt(toolInput);
+    const toolOutput = obs.tool_output ?? '';
+    const error = extractError(toolInput, toolOutput);
+
+    const verdict: ValueGateResult = evaluateObservation({
+      hookType: obs.hook_type,
+      toolName: obs.tool_name ?? undefined,
+      toolInput: obs.tool_input ?? undefined,
+      toolOutput,
+      userPrompt,
+      error,
+    });
+
+    processedIds.push(obs.id);
+
+    if (!verdict.shouldCreateMemory) continue;
+
+    // Build a memory from the observation. Importance defaults: high
+    // priority -> 8, medium -> 6, low (would not happen since we
+    // skip shouldCreateMemory=false) -> not used.
+    const importance = verdict.priority === 'high' ? 8 : 6;
+    // Pick the first suggested type, fall back to 'fact'. The
+    // value-gate returns `MemoryType`-shaped strings, but TypeScript
+    // can't prove that without importing the union (which we do at
+    // the top of the file). Narrow with a Set check rather than
+    // `as any`.
+    const VALID_TYPES = new Set<MemoryType>([
+      'fact', 'decision', 'preference', 'event', 'project_context',
+      'lesson', 'code_pattern', 'bug', 'workflow'
+    ]);
+    const suggested = verdict.suggestedTypes[0];
+    const type: MemoryType = (suggested && VALID_TYPES.has(suggested as MemoryType))
+      ? (suggested as MemoryType)
+      : 'fact';
+    // Title: first 80 chars of the content, sanitized.
+    const titleRaw = (userPrompt || toolOutput || '').replace(/\s+/g, ' ').trim();
+    const title = titleRaw.slice(0, 80) || `${verdict.reason} (${obs.hook_type})`;
+    // Content: prefer user prompt, fall back to tool output.
+    const content = userPrompt || toolOutput || verdict.reason;
+
+    // scopeLevel: if any scope is 'project' tag, scope is 'project';
+    // otherwise 'global'. This is what the Web UI's project switcher
+    // and the search filter both key off of.
+    const scopeLevel: 'project' | 'global' = scopes.some((s) => s.key === 'project')
+      ? 'project'
+      : 'global';
+
+    try {
+      const created = repo.create({
+        tenantId,
+        type,
+        title,
+        content,
+        summary: content.slice(0, 200),
+        concepts: [],
+        files: [],
+        importance,
+        confidence: 0.8,
+        source: 'agent_capture',
+        scopeLevel,
+        scopes,
+        sourceClient: null,
+        sourceSessionId: obs.session_id,
+        sourceDeviceId: null,
+      });
+      // Link observation -> memory so future reads know where it went.
+      db.prepare('UPDATE observations SET memory_id = ? WHERE id = ?')
+        .run(created.id, obs.id);
+      newMemoryIds.push(created.id);
+      promotedPairs.push({ obsId: obs.id, memId: created.id, reason: verdict.reason });
+    } catch (err) {
+      // One bad observation should not abort the whole run.
+      logger.error({ err, obsId: obs.id }, 'promoteObservations: create failed');
+    }
+  }
+
+  // Mark all touched observations as processed. We do this in one
+  // statement so a crash mid-loop doesn't leave rows half-processed.
+  if (processedIds.length > 0) {
+    const placeholders = processedIds.map(() => '?').join(',');
+    db.prepare(`
+      UPDATE observations
+      SET processed = 1
+      WHERE id IN (${placeholders}) AND tenant_id = ?
+    `).run(...processedIds, tenantId);
+  }
+
+  if (promotedPairs.length > 0) {
+    logger.info(
+      { tenantId, count: promotedPairs.length, sample: promotedPairs.slice(0, 3) },
+      'promoted observations to memories'
+    );
+  }
+
+  return newMemoryIds;
+}
+
+function parseJsonSafe<T = unknown>(s: string | null): T | null {
+  if (!s) return null;
+  try {
+    return JSON.parse(s) as T;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * OpenCode's plugin packs the chat.user prompt and any tool envelope
+ * into the observation's `tool_input` as a JSON envelope of the form
+ * { messageId, toolInput?, toolName? }. The actual user prompt is not
+ * in tool_input; for chat.* hooks it lives in `tool_output`. This
+ * helper exists for future hook shapes where a structured prompt
+ * might be supplied.
+ */
+function extractUserPrompt(toolInput: unknown): string {
+  if (!toolInput || typeof toolInput !== 'object') return '';
+  const obj = toolInput as Record<string, unknown>;
+  const candidate = obj.userPrompt ?? obj.user_prompt ?? obj.prompt ?? obj.text;
+  return typeof candidate === 'string' ? candidate : '';
+}
+
+function extractError(toolInput: unknown, toolOutput: string): string {
+  // The plugin's reportObservation doesn't surface a top-level error
+  // field today. We pull error-shaped keys from the tool envelope
+  // if any, and fall back to a substring scan of the output.
+  if (toolInput && typeof toolInput === 'object') {
+    const obj = toolInput as Record<string, unknown>;
+    if (typeof obj.error === 'string') return obj.error;
+  }
+  if (/error|exception|failed|crash/i.test(toolOutput)) {
+    return toolOutput.slice(0, 500);
+  }
+  return '';
 }

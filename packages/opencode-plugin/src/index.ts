@@ -175,6 +175,21 @@ export const MemweaveInjectPlugin: Plugin = async ({ client: ocClient }) => {
       // title is derived from the first ~80 chars of the user
       // message (or the assistant text, whichever we have).
       const title = text.slice(0, 80).replace(/\s+/g, ' ');
+
+      // v0.5.4: project scoping. The OpenCode plugin runs in the
+      // user's project root, so `process.cwd()` is a stable
+      // identifier for the project the user is working in. The
+      // server stores this on the observation + (via the
+      // consolidation worker) on the promoted memory, so
+      // cross-project searches / the Web UI's project filter can
+      // see them as distinct.
+      const projectScope = (() => {
+        try { return process.cwd(); } catch { return ''; }
+      })();
+      const scopes = projectScope
+        ? [{ key: 'project' as const, value: projectScope }]
+        : [];
+
       try {
         await client.reportSession({ sessionId: sessionID, source: 'opencode', title });
         await client.reportObservation({
@@ -182,6 +197,7 @@ export const MemweaveInjectPlugin: Plugin = async ({ client: ocClient }) => {
           messageId: messageID,
           hookType,
           text,
+          scopes,
         });
       } catch {
         // Silent fail

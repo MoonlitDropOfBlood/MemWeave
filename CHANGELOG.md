@@ -37,7 +37,81 @@ touch both (or core/shared infrastructure).
 
 ---
 
-## [0.5.3] — 2026-06-16
+## [0.5.4] — 2026-06-17
+
+### Fixed — [@mem-weave/server]
+
+- **The consolidation worker now actually promotes observations to
+  memories.** Prior to v0.5.4, the OpenCode and Codex plugins wrote
+  to the `observations` table on every message, and the README +
+  CHANGELOG claimed "the consolidation worker promotes
+  high-signal observations to long-term memories" — but that path
+  **was never wired up**. The consolidator only ran
+  evict / promote-tier / merge against the `memories` table. After
+  a long session, the user would see 200+ observations and 2
+  memories, and `memory_recall` returned nothing because it
+  searches `memories` not `observations`.
+
+  Fix: new `promoteObservationsToMemories()` phase 0 in the
+  consolidator pipeline. Runs before evict/promote/merge, so
+  newly-created memories participate in the same eviction +
+  merge passes on the same run. Marks every observation it
+  touches as `processed = 1` (including rejected ones) so the
+  next run does not re-evaluate noise. Uses `MemoryRepo.create()`
+  so the write-side dedup gate (BM25 + Jaccard + verbatim match)
+  applies — duplicate observations collapse to a single
+  reinforced memory.
+
+  Also fixed the value-gate (`workers/value-gate.ts`):
+  - Recognized `chat.user` / `chat.assistant` hook types (the
+    names the v0.4+ plugins actually emit). The old code only
+    matched `prompt_submit` / `post_tool_use` (Claude Code
+    legacy names) so 100% of plugin observations were rejected.
+  - Promotes `chat.assistant` with `tool_output >= 200 chars`
+    (the long-form assistant responses that are worth keeping).
+
+### Added — [@mem-weave/server]
+
+- **`observations.scopes_json` column + migration helper.**
+  Project scoping for memories is now end-to-end:
+  - Schema gets `scopes_json TEXT NOT NULL DEFAULT '[]'`
+  - `openDatabase()` runs `addColumnIfMissing` for DBs created
+    before v0.5.4 (SQLite 3.35+ does NOT support
+    `ALTER TABLE ... ADD COLUMN IF NOT EXISTS`, so the
+    existence check is in code)
+  - `POST /api/v1/observations` accepts a `scopes` array
+  - Consolidator **inherits** observation scopes onto the
+    promoted memory + auto-detects `scope_level: 'project'`
+    when any scope tag is `key: 'project'`
+  - `GET /api/v1/memories?scope.project=...` already worked
+    (search engine's `matchesScope`); now there are actually
+    scoped memories to find
+
+### Added — [@mem-weave/opencode-plugin]
+
+- **Observations now carry a `project` scope tag** derived from
+  `process.cwd()`. Different projects in different directories
+  will produce memories tagged with different `project` values,
+  so the Web UI's project filter (and the search engine's
+  `scope.project=...` query param) can keep them apart. Same
+  process cwd = same project; OpenCode restarts in the same
+  cwd produce idempotent observations (still keyed on
+  `(sessionId, messageId)`).
+
+### Migration
+
+- Existing DBs: `openDatabase` adds `observations.scopes_json`
+  with default `'[]'`, so existing observations appear
+  un-scoped (global). No re-classification.
+- Existing memories: untouched. New plugin-write cycle will
+  create project-scoped memories from this point on.
+- The v0.5.4 consolidator will mark **all** pre-existing
+  unprocessed observations as processed in 1-2 runs
+  (LIMIT 200/run), so the first time you trigger consolidation
+  after upgrading, expect a large `promoted` count. After that
+  it settles to whatever the plugin emits per session.
+
+---
 
 ### Added — [@mem-weave/server]
 

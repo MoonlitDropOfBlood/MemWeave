@@ -22,6 +22,11 @@ export interface ReportSessionRequest {
   deviceId?: string;
 }
 
+export interface ObservationScope {
+  key: 'project' | 'domain' | 'topic';
+  value: string;
+}
+
 export interface ReportObservationRequest {
   sessionId: string;
   messageId: string;
@@ -30,6 +35,14 @@ export interface ReportObservationRequest {
   toolName?: string;
   toolInput?: string;
   toolOutput?: string;
+  /**
+   * v0.5.4+: scope tags attached to the observation. The OpenCode
+   * plugin uses `process.cwd()` as a stable `project` value so the
+   * consolidation worker can inherit project scoping onto the
+   * promoted memory. The server tolerates an empty array for
+   * back-compat.
+   */
+  scopes?: ObservationScope[];
 }
 
 export interface MemweaveInjectClientOptions {

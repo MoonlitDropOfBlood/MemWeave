@@ -106,10 +106,18 @@ CREATE TABLE IF NOT EXISTS observations (
   timestamp INTEGER NOT NULL,
   memory_id TEXT,
   processed INTEGER NOT NULL DEFAULT 0,
+  scopes_json TEXT NOT NULL DEFAULT '[]',
   FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE,
   FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE,
   FOREIGN KEY (memory_id) REFERENCES memories(id) ON DELETE SET NULL
 );
+
+-- Note for v0.5.4: the scopes_json column is part of the CREATE
+-- TABLE above for fresh installs. For DBs created before v0.5.4,
+-- openDatabase() runs an idempotent addColumnIfMissing helper
+-- (in database.ts) to backfill the column. SQLite 3.35+ does NOT
+-- support ALTER TABLE ... ADD COLUMN IF NOT EXISTS syntax, so we
+-- do the existence check in code rather than SQL.
 
 CREATE TABLE IF NOT EXISTS access_logs (
   id TEXT PRIMARY KEY,

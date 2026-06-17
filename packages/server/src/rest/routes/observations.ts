@@ -12,6 +12,14 @@ const ListQuerySchema = z.object({
 
 const IdParamSchema = z.object({ id: z.string().min(1) });
 
+// v0.5.4: observations now carry a `scopes` array. The consolidation
+// worker inherits these onto the promoted memory so project-scoped
+// searches / dashboard filters work without re-classification.
+const ScopeTagInputSchema = z.object({
+  key: z.enum(['project', 'domain', 'topic']),
+  value: z.string().min(1).max(200)
+});
+
 const CreateObservationSchema = z.object({
   sessionId: z.string().min(1).max(200),
   messageId: z.string().min(1).max(200),
@@ -19,7 +27,8 @@ const CreateObservationSchema = z.object({
   text: z.string().min(1).max(200_000),
   toolName: z.string().min(1).max(200).optional(),
   toolInput: z.string().max(200_000).optional(),
-  toolOutput: z.string().max(200_000).optional()
+  toolOutput: z.string().max(200_000).optional(),
+  scopes: z.array(ScopeTagInputSchema).max(20).default([])
 });
 
 export function registerObservationsRoute(app: FastifyInstance, dbPath: string): void {
@@ -39,10 +48,14 @@ export function registerObservationsRoute(app: FastifyInstance, dbPath: string):
     // `tool_input` as a small JSON envelope so the idempotency check
     // (sessionId, messageId) can locate the existing record without a
     // schema change. The actual chat body lives in `tool_output`.
+    // v0.5.4: scopes get persisted to scopes_json so consolidation
+    // can inherit them onto the promoted memory.
     const envelope: Record<string, unknown> = { messageId: body.messageId };
     if (body.toolInput) envelope.toolInput = body.toolInput;
     if (body.toolName) envelope.toolName = body.toolName;
+    if (body.scopes.length > 0) envelope.scopes = body.scopes;
     const toolInput = JSON.stringify(envelope);
+    const scopesJson = JSON.stringify(body.scopes);
     const { record, created } = obsRepo.createOrGetByMessageId({
       sessionId: body.sessionId,
       tenantId: TENANT_DEFAULT,
@@ -51,7 +64,8 @@ export function registerObservationsRoute(app: FastifyInstance, dbPath: string):
       toolInput,
       toolOutput: body.text,
       memoryId: null,
-      messageId: body.messageId
+      messageId: body.messageId,
+      scopes: scopesJson
     });
     return reply.code(created ? 201 : 200).send({ observation: record, created });
   });
@@ -67,3 +81,4 @@ export function registerObservationsRoute(app: FastifyInstance, dbPath: string):
     return reply.code(200).send(obs);
   });
 }
+

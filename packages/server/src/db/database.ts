@@ -49,6 +49,12 @@ export function openDatabase(path: string, options: OpenDatabaseOptions = {}): D
   const db = new Database(path);
   db.exec(SCHEMA_SQL);
 
+  // v0.5.4+ backfill: existing DBs created before observations.scopes_json
+  // existed need the column added at startup. SQLite 3.35+ does NOT support
+  // ALTER TABLE ... ADD COLUMN IF NOT EXISTS, so we check the schema first.
+  // Idempotent: a DB that already has the column is a no-op.
+  addColumnIfMissing(db, 'observations', 'scopes_json', "TEXT NOT NULL DEFAULT '[]'");
+
   if (!options.skipVectorExtension) {
     try {
       // Load sqlite-vec (a no-op if the package isn't installed, but we install it
@@ -74,6 +80,30 @@ export function openDatabase(path: string, options: OpenDatabaseOptions = {}): D
 
 export function getVecTableName(dimensions: number): string {
   return vecTableName(dimensions);
+}
+
+/**
+ * Add a column to a table if it doesn't already exist. SQLite 3.35+
+ * does not support `ALTER TABLE ... ADD COLUMN IF NOT EXISTS`, so we
+ * inspect `PRAGMA table_info` first. Used by `openDatabase` to backfill
+ * columns added in schema revisions (e.g. observations.scopes_json in
+ * v0.5.4). Idempotent.
+ *
+ * The caller is responsible for the `columnDef` matching the latest
+ * `SCHEMA_SQL` declaration. If the column exists with a different
+ * definition, this function does NOT migrate it (down-migrations are
+ * out of scope; release notes cover renames).
+ */
+function addColumnIfMissing(
+  db: Db,
+  table: string,
+  column: string,
+  columnDef: string
+): void {
+  const rows = db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>;
+  if (rows.some((r) => r.name === column)) return;
+  db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${columnDef}`);
+  logger.info({ table, column, columnDef }, 'added missing column to existing table');
 }
 
 export function transaction<T>(db: Db, fn: () => T): T {
