@@ -76,6 +76,10 @@ memweave/
 │       │   └── stop.cmd              # Windows thin wrapper → stop.mjs
 │       ├── README.md                 # Install + usage
 │       └── package.json              # Metadata only (private, not published)
+├── scripts/
+│   ├── publish.mjs                   # One-shot build + publish for the 2 npm packages
+│   ├── sync-web-dist.cjs             # Sync web build → installed server dist (see "Web build sync" below)
+│   └── playwright-verify-graph.mjs   # Playwright + msedge verifier for GraphPage layout
 ├── web/                              # React 18 + Vite admin UI (7 pages + 7 CSS modules)
 │   └── src/{pages,components,api,lib,theme}/
 ├── tests/                            # Server vitest tests
@@ -183,6 +187,16 @@ Start-Process -WindowStyle Hidden memweave start
 
 - **Default port**: 3131 (configurable in `memweave.config.jsonc → server.port`).
 - **Web UI 503?** Means the server can't find `dist/web/` — run `npm run web:build`.
+- **Web build sync** (v0.5.3+): `npm run web:build` writes to **two**
+  locations atomically: the source tree's `dist/web/` (used by
+  `npm run dev`) AND the installed `@mem-weave/server`'s
+  `dist/web/` (used by the globally-installed server). The
+  `scripts/sync-web-dist.cjs` script does the second copy. This
+  matters because the server resolves the static root as
+  `resolve(here, '../../dist/web')` where `here` is its own
+  installed location — NOT the source tree. If you skip the
+  sync, browser refreshes will see the **old** bundle even after
+  rebuilding. See commit `36c747c` for the bug history.
 - **Vector layer optional**: `embedding.dimensions: 0` skips sqlite-vec entirely; falls back to BM25 + graph + causal.
 - **MCP endpoint**: `POST/GET/DELETE http://127.0.0.1:3131/mcp` (Streamable HTTP). Any MCP client (OpenCode, Claude Desktop, custom) can connect.
 - **Git history**: this is a fresh checkout; commit/branch conventions not yet established.
