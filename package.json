@@ -7,10 +7,11 @@
   "scripts": {
     "dev": "npm run web:build && tsx packages/server/src/server/bootstrap.ts",
     "web:dev": "cd web && npm run dev",
-    "web:build": "cd web && npm run build && node scripts/sync-web-dist.cjs",
+    "web:build": "cd web && npm run build",
+    "web:sync": "node scripts/sync-web-dist.cjs",
     "build:server": "cd packages/server && npm run build",
     "build:opencode-plugin": "cd packages/opencode-plugin && npm run build",
-    "build": "npm run web:build && npm run build:server && npm run build:opencode-plugin",
+    "build": "npm run web:build && npm run build:server && npm run build:opencode-plugin && npm run web:sync",
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc -p tsconfig.json --noEmit",
