@@ -1,6 +1,6 @@
 {
   "name": "memweave",
-  "version": "0.1.0",
+  "version": "0.5.4",
   "description": "Local-first, tiered memory for Codex agents. Injects relevant long-term memories into the system prompt and writes completed turns back to the MemWeave server for consolidation.",
   "author": {
     "name": "MemWeave",

@@ -64,15 +64,17 @@ codex plugin add memweave@<marketplace>
 
 ```
 [Codex agent]
-   ↓ session_end → Stop event JSON on stdin
+   ↓ session_end → Stop event JSON on stdin (snake_case, includes cwd)
 [hooks/stop.mjs] (cross-platform Node, no jq/curl)
-   ↓ POST /api/v1/sessions   { sessionId, source: "codex", title }
-   ↓ POST /api/v1/observations { sessionId, messageId, hookType: "chat.assistant", text }
+   ↓ POST /api/v1/sessions    { sessionId, source: "codex", title }
+   ↓ POST /api/v1/observations { sessionId, messageId, hookType: "chat.assistant", text,
+   ↓                            scopes: [{ key: "project", value: cwd }] }
 [MemWeave server on 127.0.0.1:3131]
    ↓ consolidation worker (every 6h)
    ↓ promote high-signal observations → long-term memories
+   ↓   (inherits the observation's scopes: project gets scope_level="project")
 [Next Codex session] system prompt receives memory summaries
-                       via the 10 MCP tools
+                       via the 10 MCP tools (filtered by project)
 ```
 
 ## Prerequisites
@@ -115,6 +117,7 @@ packages/codex-plugin/
 | Plugin version | Server version | Notes |
 |---|---|---|
 | 0.1.0 | ≥ 0.5.3 | Adds `codex` to the source enum (v0.5.3+) |
+| 0.5.4 | ≥ 0.5.4 | Sends `scopes: [{ key: 'project', value: cwd }]` on every observation. The server's consolidation worker inherits the scope onto the promoted memory, so different Codex projects stay separate in search + the Web UI project filter |
 
 ## Known limitations
 

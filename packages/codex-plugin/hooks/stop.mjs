@@ -86,7 +86,18 @@ await postJson('/api/v1/sessions', {
   title: sessionTitle,
 });
 
-// 2. Write the assistant message as an observation (idempotent on msgId)
+// 2. Write the assistant message as an observation (idempotent on msgId).
+// v0.5.4: also stamp a `project` scope tag derived from the Codex Stop
+// event's `cwd` (or our own process.cwd() as a fallback) so the
+// consolidation worker inherits project scoping onto the promoted
+// memory. Different projects in different directories produce
+// memories tagged with different `project` values; same cwd =
+// same project, retries stay idempotent on (sessionId, messageId).
+const projectScope = (() => {
+  try { return (cwd || process.cwd()) || ''; } catch { return ''; }
+})();
+const scopes = projectScope ? [{ key: 'project', value: projectScope }] : [];
+
 if (lastAssistant) {
   const hash = createHash('sha256').update(lastAssistant).digest('hex').slice(0, 16);
   const messageId = `codex-${sessionId}-turn-${turnId}-${hash}`;
@@ -95,6 +106,7 @@ if (lastAssistant) {
     messageId,
     hookType: 'chat.assistant',
     text: lastAssistant,
+    scopes,
   });
 }
 

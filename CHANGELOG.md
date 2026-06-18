@@ -34,6 +34,10 @@ touch both (or core/shared infrastructure).
     idempotent observation
   - Install: `codex plugin install /path/to/MemWeave/packages/codex-plugin`
   - Full design spec: `docs/superpowers/specs/2026-06-16-codex-plugin-design.md`
+  - **v0.5.4**: Stop hook now stamps `scopes: [{ key: 'project', value: cwd }]`
+    on every observation, so the consolidation worker inherits the
+    project tag onto the promoted memory. Cross-project isolation
+    now works for Codex just like it does for OpenCode.
 
 ---
 
