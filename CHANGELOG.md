@@ -41,6 +41,87 @@ touch both (or core/shared infrastructure).
 
 ---
 
+## [0.5.7] — 2026-06-18
+
+### Changed — [@mem-weave/server]
+
+- **`memweave start` is now a background (daemon) command.**
+  The default `start` invocation detaches to a child process and
+  exits immediately; closing the parent terminal does **not** stop
+  the server. This replaces the legacy
+  `Start-Process -WindowStyle Hidden memweave start` workaround
+  documented in earlier READMEs (it was a Windows-only hack and
+  didn't survive some shell teardown paths).
+
+  **New behavior:**
+
+  - `memweave start` — spawns a detached child, writes its PID to
+    the system temp dir, returns the PID + log path, exits. The
+    child runs under its own process group, so closing the
+    launching terminal does not affect it (verified on Windows
+    + Powershell + cmd).
+  - `memweave start -f` / `memweave start --foreground` — run
+    inline in the current terminal; useful for `tail -f` style
+    debugging. Output still goes to the log file.
+  - `MEMWEAVE_FOREGROUND=1` env var — same as `--foreground`.
+  - `MEMWEAVE_FOREGROUND=0` env var — force daemonize even if
+    `--foreground` is in argv (the detached child sets this
+    internally to keep its own behavior deterministic).
+
+  **Already-running guard:** `start` reads the PID file, checks
+  if the recorded PID is alive (`process.kill(pid, 0)`), and
+  refuses to start a second instance with a clear error pointing
+  at the existing PID. Stale PID files are cleaned up
+  automatically.
+
+  **New log file:** `<dataDir>/memweave.log` (default
+  `~/.memweave/data/memweave.log`). The child's pino logger
+  and the cli-entry's banner write go there in append mode. The
+  parent's stdout only gets a one-line status message — the
+  heavy log stream lives in the file.
+
+  **Implementation notes:**
+
+  - Self-spawn via `child_process.spawn(process.execPath, [...],
+    { detached: true, stdio: ['ignore', logFd, logFd], windowsHide: true })`
+    followed by `child.unref()`. No new dependencies; pure Node stdlib.
+  - The child re-execs the same `dist/cli-entry.js start
+    --foreground` so the actual server bootstrap is identical to
+    the pre-v0.5.7 code path.
+  - On Windows, `detached: true` puts the child in a new process
+    group; `windowsHide: true` suppresses the brief console flash.
+    On POSIX, `detached: true` + `unref()` is the standard idiom
+    for a true daemon.
+
+### Migration from v0.5.6
+
+If you previously launched with `Start-Process -WindowStyle Hidden
+memweave start` (or relied on `start` running inline), nothing
+breaks — `start` still does what you want, but in a more
+predictable way. Scripts that did:
+
+```powershell
+Start-Process -WindowStyle Hidden memweave start
+```
+
+can be simplified to just:
+
+```powershell
+memweave start
+```
+
+If you need the inline behavior (e.g., for a debugger to attach),
+add `-f`:
+
+```powershell
+memweave start -f
+```
+
+If you have a `tail -f` workflow on the server's stderr, point it
+at `~/.memweave/data/memweave.log` instead.
+
+---
+
 ## [0.5.6] — 2026-06-18
 
 ### Changed — [@mem-weave/server], [@mem-weave/opencode-plugin]

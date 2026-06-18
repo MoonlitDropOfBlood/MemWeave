@@ -76,17 +76,25 @@ LLM 看到摘要，需要细节就主动调 `memory_expand({ memoryId: "m_abc" }
 npm install -g --allow-scripts=better-sqlite3,sharp,protobufjs @mem-weave/server
 npm install -g @mem-weave/opencode-plugin
 memweave init     # 生成 memweave.config.jsonc + 数据目录
-memweave start    # 启动服务（前台，默认 http://127.0.0.1:3131）
+memweave start    # 后台启动（v0.5.7+ 默认），关闭终端不结束
 ```
 
 打开浏览器访问 [`http://127.0.0.1:3131/ui/`](http://127.0.0.1:3131/ui/) 即可看到 **Calm Memory Atlas** Web UI。
 
-#### 后台启动（Windows / PowerShell）
+#### 启动是后台的
 
-```powershell
-Start-Process -WindowStyle Hidden memweave start
-memweave stop     # 停止（需要 server 进程是 CLI 启动的，留有 PID 文件）
+`memweave start` **默认后台启动**（detach 到独立进程），返回后立即退出；**关闭终端也不会结束 server**。日志写到 `<dataDir>/memweave.log`（默认 `~/.memweave/data/memweave.log`），PID 文件在系统临时目录。
+
+```bash
+memweave start                # 后台启动（默认）
+memweave status               # /api/v1/health
+memweave stop                 # 用 PID 文件杀进程
+
+# 调试时前台运行（Ctrl-C 停止）
+memweave start -f             # 或 --foreground
 ```
+
+> 历史 workaround `Start-Process -WindowStyle Hidden memweave start` 在 v0.5.7+ **不再需要** —— `start` 本身就是后台的。
 
 OpenCode 客户端：编辑 `~/.config/opencode/opencode.json`：
 
@@ -115,7 +123,7 @@ OpenCode 客户端：编辑 `~/.config/opencode/opencode.json`：
 
 ```bash
 npx @mem-weave/server init     # 生成 memweave.config.jsonc + 数据目录
-npx @mem-weave/server start    # 启动服务（前台）
+npx @mem-weave/server start    # 后台启动；npx 进程退出后 server 仍存活
 ```
 
 仅限**临时试用**。OpenCode / IDE 集成需要全局安装 server（方式一），否则 MCP 端点 `http://127.0.0.1:3131/mcp` 在 npx 进程退出后消失。
@@ -200,7 +208,7 @@ curl http://127.0.0.1:3131/api/v1/health
 | 命令 | 说明 |
 |---|---|
 | `init` | 生成默认配置和数据目录 |
-| `start` | 启动服务（前台） |
+| `start` | 后台启动服务（默认）后退出；`start -f` 前台运行（调试用） |
 | `stop` | 停止后台服务 |
 | `status` | 查看服务状态 |
 | `migrate` | 运行数据库迁移 |

@@ -76,17 +76,25 @@ The plugin only injects summaries into the system prompt (step 1). The MCP tools
 npm install -g --allow-scripts=better-sqlite3,sharp,protobufjs @mem-weave/server
 npm install -g @mem-weave/opencode-plugin
 memweave init     # generate memweave.config.jsonc + data dir
-memweave start    # foreground server on :3131
+memweave start    # background server (default since v0.5.7)
 ```
 
 Open [`http://127.0.0.1:3131/ui/`](http://127.0.0.1:3131/ui/) to see the **Calm Memory Atlas** Web UI.
 
-#### Detached start (Windows / PowerShell)
+#### `start` is background by default
 
-```powershell
-Start-Process -WindowStyle Hidden memweave start
-memweave stop     # stop (requires the server to be a CLI-spawned process with a PID file)
+`memweave start` **detaches to its own process and exits immediately**; closing the terminal will not stop the server. Logs are appended to `<dataDir>/memweave.log` (default `~/.memweave/data/memweave.log`); the PID file lives in the system temp dir.
+
+```bash
+memweave start                # background (default)
+memweave status               # /api/v1/health
+memweave stop                 # use the PID file
+
+# run inline for debugging (Ctrl-C to stop)
+memweave start -f             # or --foreground
 ```
+
+> The legacy `Start-Process -WindowStyle Hidden memweave start` workaround is no longer needed since v0.5.7 — `start` is already a background command.
 
 OpenCode client — edit `~/.config/opencode/opencode.json`:
 
@@ -208,7 +216,7 @@ memweave <command>
 | Command | Description |
 |---|---|
 | `init` | Generate default config and data dir |
-| `start` | Start the service (foreground) |
+| `start` | Start the service in the background (default) and exit. `start -f` to run inline. |
 | `stop` | Stop the background service |
 | `status` | Show service status |
 | `migrate` | Run database migrations |
