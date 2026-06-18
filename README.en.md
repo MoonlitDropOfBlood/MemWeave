@@ -73,20 +73,11 @@ The plugin only injects summaries into the system prompt (step 1). The MCP tools
 ### Option A — global install (recommended; needed for OpenCode / IDE integration)
 
 ```bash
-npm install -g @mem-weave/server @mem-weave/opencode-plugin
+npm install -g --allow-scripts=better-sqlite3,sharp,protobufjs @mem-weave/server
+npm install -g @mem-weave/opencode-plugin
 memweave init     # generate memweave.config.jsonc + data dir
 memweave start    # foreground server on :3131
 ```
-
-> **npm 10+ install-script note**: `@mem-weave/server@0.5.6+` and
-> `@mem-weave/opencode-plugin@0.5.6+` declare
-> `onlyBuiltDependencies: [better-sqlite3, sharp, protobufjs]` in
-> their `package.json`. The post-install scripts for these three
-> native modules run automatically without prompting. **You do
-> not need** the `--allow-scripts=...` flag. If a future version
-> of npm adds a new package with an install script you will see a
-> new prompt; that is the desired behavior (explicit allow-list,
-> not implicit trust).
 
 Open [`http://127.0.0.1:3131/ui/`](http://127.0.0.1:3131/ui/) to see the **Calm Memory Atlas** Web UI.
 

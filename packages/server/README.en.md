@@ -73,7 +73,8 @@ The plugin only injects summaries into the system prompt (step 1). The MCP tools
 ### Option A — global install (recommended; needed for OpenCode / IDE integration)
 
 ```bash
-npm install -g @mem-weave/server @mem-weave/opencode-plugin
+npm install -g --allow-scripts=better-sqlite3,sharp,protobufjs @mem-weave/server
+npm install -g @mem-weave/opencode-plugin
 memweave init     # generate memweave.config.jsonc + data dir
 memweave start    # foreground server on :3131
 ```
