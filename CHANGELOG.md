@@ -41,6 +41,37 @@ touch both (or core/shared infrastructure).
 
 ---
 
+## [0.5.6] — 2026-06-18
+
+### Changed — [@mem-weave/server], [@mem-weave/opencode-plugin]
+
+- **Move `onlyBuiltDependencies` to per-package `package.json`.**
+  The list of native packages allowed to run install scripts
+  (`better-sqlite3`, `sharp`, `protobufjs`) is now declared in
+  each published package's `package.json`, **not** the root
+  monorepo `package.json`. This is the version of the config
+  that npm consults when the user runs
+  `npm install -g @mem-weave/server` or
+  `npm install -g @mem-weave/opencode-plugin` directly,
+  so the `--allow-scripts=...` warning no longer fires for
+  the standard install command.
+
+  `npm install` from the source tree still works the same way
+  (root `package.json` also has the list, so the workspace-level
+  install is a no-op for these three packages).
+
+### Migration from v0.5.5
+
+No action required. The new install command is just:
+
+```bash
+npm install -g @mem-weave/server @mem-weave/opencode-plugin
+```
+
+No more `--allow-scripts=...` flag.
+
+---
+
 ## [0.5.5] — 2026-06-18
 
 ### Fixed — [@mem-weave/server]

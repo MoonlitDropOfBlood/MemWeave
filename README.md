@@ -78,6 +78,12 @@ memweave init     # 生成 memweave.config.jsonc + 数据目录
 memweave start    # 启动服务（前台，默认 http://127.0.0.1:3131）
 ```
 
+> **npm 10+ 的 install-script 提示**：`@mem-weave/server@0.5.6+` 和
+> `@mem-weave/opencode-plugin@0.5.6+` 的 `package.json` 已声明
+> `onlyBuiltDependencies: [better-sqlite3, sharp, protobufjs]`，这三个
+> native module 的 post-install 脚本会自动跑（不再弹出
+> `--allow-scripts=...` 警告）。**不需要**加 `--allow-scripts` flag。
+
 打开浏览器访问 [`http://127.0.0.1:3131/ui/`](http://127.0.0.1:3131/ui/) 即可看到 **Calm Memory Atlas** Web UI。
 
 #### 后台启动（Windows / PowerShell）
