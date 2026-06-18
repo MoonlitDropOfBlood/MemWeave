@@ -41,6 +41,63 @@ touch both (or core/shared infrastructure).
 
 ---
 
+## [0.5.5] — 2026-06-18
+
+### Fixed — [@mem-weave/server]
+
+- **The `event` type is no longer auto-promoted from raw chat
+  turns.** v0.5.4 added two value-gate rules that auto-promoted
+  any `chat.user` message > 50 chars and any `chat.assistant`
+  message > 200 chars to a memory with `type: 'event'` and
+  `source: 'agent_capture'`. As a result, every plugin-written
+  message in 0.5.4 was promoted to a memory — and the memory
+  table was 98% `event` rows (117 / 119 active memories in the
+  user DB).
+
+  This was a **category error**. An `event` memory should
+  describe a discrete thing that happened in the world (a
+  release, a build failure, a config change), not "the user
+  said X" or "the assistant said Y". Raw conversation turns
+  are not events. The right surface for converting a
+  conversation into memories is the **agent itself**, calling
+  the `memory_save` MCP tool with a proper `type`
+  (`fact` / `decision` / `preference` / `lesson` / etc.).
+
+  Fix: removed the two buggy rules from
+  `workers/value-gate.ts`. The remaining gates (explicit
+  "remember this" in the user message, architectural-decision
+  patterns in the user message, tool failures for
+  `post_tool_use` Bash) are kept — those *are* the kind of
+  signal that justifies an auto-promoted memory.
+
+  A one-time fix script is shipped:
+  `scripts/fix-v054-event-bug.cjs`. It soft-deletes the
+  0.5.4-era `event / agent_capture` memories, unlinks the
+  associated observations, and resets them to
+  `processed = 0`. A single consolidation run after the
+  upgrade marks them `processed = 1` (the value-gate now
+  rejects them). `--dry-run` shows the affected rows before
+  the delete. After running, the only memories left in the
+  user DB are the two `fact / user_explicit` rows the user
+  had typed explicitly via the MCP tool.
+
+  End-to-end verified: 117 buggy memories soft-deleted, 117
+  observations marked `processed = 1` (none promoted), only
+  2 `fact / user_explicit` memories remain (the only ones
+  the user actually typed via the MCP tool).
+
+### Migration from v0.5.4
+
+```bash
+# One-time, after upgrading to v0.5.5:
+node scripts/fix-v054-event-bug.cjs --dry-run    # see what would be removed
+node scripts/fix-v054-event-bug.cjs             # actually remove
+node scripts/sync-web-dist.cjs                   # if you serve the Web UI from the installed server
+POST /api/v1/consolidate                         # drain the unlinked observations
+```
+
+---
+
 ## [0.5.4] — 2026-06-17
 
 ### Fixed — [@mem-weave/server]

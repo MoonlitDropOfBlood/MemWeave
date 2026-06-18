@@ -62,44 +62,27 @@ export function evaluateObservation(input: ValueGateInput): ValueGateResult {
     }
   }
 
-  // 3. Tool failures (legacy Claude-Code style hook).
+  // 3. Tool failures (legacy Claude-Code style hook + chat.tool).
+  //    A tool result that looks like a build/test error is exactly
+  //    the kind of "discrete event" the `event` type was designed
+  //    for. Promote as `bug` so the agent can search failures.
   if (input.hookType === 'post_tool_use' && input.toolName === 'Bash' && FAILURE_KEYWORDS.some(k => combined.includes(k))) {
     return { shouldCreateMemory: true, reason: 'Tool failure detected', suggestedTypes: ['bug'], priority: 'high' };
   }
 
-  // 4. Substantive user prompt. Triggered by either:
-  //    - the original 'prompt_submit' hook (legacy / hypothetical)
-  //    - the actual 'chat.user' hook the OpenCode + Codex plugins use
-  //    A short prompt is too noisy to be worth keeping; require > 50 chars
-  //    of substance. We do NOT promote obvious "tool call wrappers" or
-  //    one-liner acknowledgements.
-  if (
-    (input.hookType === 'prompt_submit' || input.hookType === 'chat.user') &&
-    input.userPrompt && input.userPrompt.length > 50
-  ) {
-    return {
-      shouldCreateMemory: true,
-      reason: 'Substantive user prompt',
-      suggestedTypes: ['event'],
-      priority: 'medium'
-    };
-  }
-
-  // 5. Assistant messages with substantive content. The OpenCode /
-  //    Codex plugins write the assistant's full response into
-  //    `tool_output` of the chat.assistant observation. We promote
-  //    when the response is long enough to be worth keeping
-  //    (>= 200 chars) so short acknowledgements ("OK.", "Sure.")
-  //    are not promoted.
-  if (input.hookType === 'chat.assistant' && (input.toolOutput || '').length >= 200) {
-    return {
-      shouldCreateMemory: true,
-      reason: 'Substantive assistant response',
-      suggestedTypes: ['event'],
-      priority: 'medium'
-    };
-  }
-
-  // Default: reject routine operations.
+  // Default: reject routine operations. Observations that did not
+  // match any of the patterns above are still marked processed=1
+  // by the consolidator - we never want to re-evaluate them.
+  //
+  // v0.5.4 NOTE: an earlier draft auto-promoted any chat.user or
+  // chat.assistant observation longer than 50/200 chars as
+  // type='event'. That was a category error: raw conversation
+  // turns are NOT events. An `event` memory should describe a
+  // discrete thing that happened in the world (a release, a
+  // build failure, a config change), not "the user said X" or
+  // "the assistant said Y". The right surface for converting a
+  // conversation into memories is the agent itself, calling
+  // the `memory_save` MCP tool with a proper type. See git
+  // history for the removed rules.
   return { shouldCreateMemory: false, reason: 'Routine operation, no memory value', suggestedTypes: [], priority: 'low' };
 }
