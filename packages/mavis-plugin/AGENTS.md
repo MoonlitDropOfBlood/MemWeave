@@ -150,3 +150,22 @@ packages/mavis-plugin/
 | `event.message.updated` mapping | OpenCode `event` hook + reverse-query SDK | Two separate hooks: `UserPromptSubmit` for user, `Stop` for assistant |
 | `tool.execute.before` mapping | OpenCode SDK | `PreToolUse` (CC marketplace) |
 | State | In-process Map (cache, in `index.ts`) | None -- stateless across hooks (server is dedup source) |
+| **Hook registration** | OpenCode SDK auto-loads `hooks/hooks.json` | `distributeHooks` is a stub in Mavis; you must ALSO drop markdown hook files at `~/.mavis/agents/<agent>/hooks/*.md` (YAML frontmatter + bash body) to wire the events. See `README.md` for the exact three files. |
+
+## DEV WORKFLOW (server source changes)
+
+The hooks POST to `http://127.0.0.1:3131`, which is whichever
+server is listening on that port. Two ways to drive that port:
+
+1. **`npm run dev`** — `tsx` runs `packages/server/src/server/bootstrap.ts`
+   with hot-reload. Source changes take effect on the next request
+   (no rebuild needed). For dev iteration, kill the global server
+   (`Stop-Process` on its PID) and run `npm run dev` instead.
+2. **`npm run publish`** — proper release path. Bumps server
+   version, rebuilds, pushes to npm. After publish,
+   `npm install -g @mem-weave/server@latest` updates the global
+   install.
+
+**Do not** manually copy `packages/server/dist/` into the global
+install — that bypasses versioning. If you need local-global
+isolation, use `npm link ./packages/server` once and forget.

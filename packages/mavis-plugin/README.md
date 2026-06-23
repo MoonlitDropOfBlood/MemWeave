@@ -178,6 +178,99 @@ just writes `{"continue":true,"suppressOutput":true}` to stdout
 and exits 0. Inspect the response JSON to see whether the
 `hookSpecificOutput.additionalContext` is populated.
 
+## Mavis-side hook wiring (REQUIRED, do once per agent)
+
+**Mavis does NOT auto-load this plugin's `hooks/hooks.json`.** Its
+`distributeHooks` is a stub that just logs. Mavis's real hook system
+reads markdown hook files from `~/.mavis/agents/<agent>/hooks/*.md`
+(where `<agent>` is your agent name, e.g. `mavis`).
+
+Each `.md` file has YAML frontmatter (declares the event +
+matcher + priority) and a bash body that invokes one of this
+plugin's `.mjs` scripts at the install path. To wire the three
+hooks, drop these three files at
+`~/.mavis/agents/mavis/hooks/` (or your agent's hook dir):
+
+```bash
+# Path on this machine after manual install
+INSTALL="C:/Users/wwhby/.mavis/plugins/cache/memweave-local/memweave/0.5.0/hooks"
+
+# UserPromptSubmit
+cat > ~/.mavis/agents/mavis/hooks/memweave-prompt-inject.md <<EOF
+---
+hookEvent: UserPromptSubmit
+type: script
+agent: mavis
+priority: 80
+matcher: ""
+timeout: 15000
+---
+
+\`\`\`bash
+node "${INSTALL}/prompt-inject.mjs"
+\`\`\`
+EOF
+
+# PreToolUse (file tools only)
+cat > ~/.mavis/agents/mavis/hooks/memweave-file-pack.md <<EOF
+---
+hookEvent: PreToolUse
+type: script
+agent: mavis
+priority: 80
+matcher: "^(read|Read|edit|Edit|write|Write|multiedit|MultiEdit|glob|Glob|grep|Grep)\$"
+timeout: 10000
+---
+
+\`\`\`bash
+node "${INSTALL}/file-pack.mjs"
+\`\`\`
+EOF
+
+# AgentStop (assistant writeback)
+cat > ~/.mavis/agents/mavis/hooks/memweave-writeback.md <<EOF
+---
+hookEvent: AgentStop
+type: script
+agent: mavis
+priority: 200
+matcher: ""
+timeout: 30000
+---
+
+\`\`\`bash
+node "${INSTALL}/writeback.mjs"
+\`\`\`
+EOF
+```
+
+Verify with `mavis hook list` (look for `mavis:memweave-*`) and
+`mavis hook test mavis:memweave-prompt-inject` (should print
+`Hook executed successfully (1 hook(s) ran)`).
+
+## Dev workflow for server source changes
+
+The hooks call the **globally installed** `@mem-weave/server` (at
+`C:\Users\wwhby\AppData\Roaming\npm\node_modules\@mem-weave\server\`).
+If you change `packages/server/src/` and want the changes to take
+effect, you have two options:
+
+1. **`npm run dev` (recommended for iteration)** — uses `tsx` to
+   start the server from source with hot-reload. Run in a separate
+   terminal; the dev server listens on `:3131` exactly like the
+   global install. The hooks will talk to whichever server is on
+   that port.
+
+2. **Bump version + `npm run publish`** — the proper way to
+   release. The publish script (`scripts/publish.mjs`) rebuilds
+   the dist, copies it into a tarball, and uploads to npm. After
+   publish, `npm install -g @mem-weave/server@latest` updates the
+   global install.
+
+DO NOT manually copy `packages/server/dist/` to the global install
+directory — that bypasses versioning and breaks `npm`-managed
+state.
+
 ## Versioning
 
 | Plugin version | Server version | Notes |
