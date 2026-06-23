@@ -71,6 +71,23 @@ touch both (or core/shared infrastructure).
 
 ---
 
+## [0.6.0] — 2026-06-23
+
+### Added — [@mem-weave/server]
+
+- **`SourceClient` enum gained `'mavis'`** — the
+  `POST /api/v1/sessions` route's zod schema (and the underlying
+  `SourceClientSchema` in `core/types.ts`) now accepts `mavis` as a
+  valid `source` value. Required by the new
+  [`packages/mavis-plugin/`](../packages/mavis-plugin/) (a CC
+  marketplace directory-style plugin for the Mavis `mavis` agent)
+  which tags every session row with `source: 'mavis'`. Rollback:
+  revert the enum to its v0.5.7 list — the route's validation
+  error messages enumerate the current valid set, so the source of
+  truth is in the schema.
+
+---
+
 ## [0.5.7] — 2026-06-18
 
 ### Changed — [@mem-weave/server]
