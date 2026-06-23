@@ -22,6 +22,36 @@ touch both (or core/shared infrastructure).
 
 ## [Unreleased]
 
+### Added — Mavis plugin + Codex plugin parity
+
+- **MemWeave for Mavis (mavis)** — `packages/mavis-plugin/` (new package, v0.5.0)
+  - Pure-config directory-style CC marketplace plugin (no build step, no
+    npm publish). Mirrors the opencode-plugin / codex-plugin feature
+    surface: 10 `memory_*` MCP tools auto-loaded via `.mcp.json`, plus
+    three hooks — `UserPromptSubmit` (user message writeback +
+    `prompt_delta` injection), `PreToolUse` (file-touching tools →
+    `file_pack` injection), `Stop` (assistant message writeback).
+  - Install: copy or symlink into the Mavis plugin loader. Locally:
+    `mavis plugin install /path/to/MemWeave/packages/mavis-plugin`. The
+    daemon's `mavis plugin list` shows `memweave@memweave-local` once
+    installed. See `packages/mavis-plugin/README.md` for the agent-side
+    hook wiring (Mavis loads hooks from
+    `~/.mavis/agents/mavis/hooks/*.md`, not from the CC marketplace
+    `hooks/hooks.json`).
+  - Server's `SourceClient` enum gained `'mavis'` (gated by
+    `@mem-weave/server` v0.6.0; the `POST /api/v1/sessions` route's
+    zod schema was updated in lockstep).
+
+- **Codex plugin upgrade** — `packages/codex-plugin/` v0.5.4 → v0.6.0
+  - Adds `UserPromptSubmit` (user message writeback + `prompt_delta`
+    injection) and `PreToolUse` (file_pack injection) hooks, bringing
+    feature parity with the opencode-plugin and the new mavis-plugin.
+  - `Stop` hook unchanged in behaviour but now shares `hooks/_lib.mjs`
+    with the new hooks (HTTP client + helpers deduplicated).
+  - New test fixtures: `fixtures/user-prompt.json`,
+    `fixtures/pretool-read.json`, plus matching `package.json` scripts
+    (`test:prompt-inject`, `test:file-pack`, `test:writeback`).
+
 ### Added — Codex plugin
 
 - **MemWeave for OpenAI Codex** — `packages/codex-plugin/`

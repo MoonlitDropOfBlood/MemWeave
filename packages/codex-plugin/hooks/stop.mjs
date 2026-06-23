@@ -1,115 +1,71 @@
 #!/usr/bin/env node
-// MemWeave Codex plugin -- Stop hook (cross-platform, no native deps)
+// MemWeave Codex plugin -- Stop hook (cross-platform, no native deps).
 //
 // Reads a JSON event from stdin (Codex Stop event) and POSTs the
 // session + last assistant message to the MemWeave server.
 // Idempotent on (sessionId, messageId), so retries collapse to one
 // row server-side.
 //
-// Communicates back to Codex via stdout JSON: { "continue": true }.
+// Communicates back to Codex via stdout JSON: { continue: true }.
 //
-// This is the canonical implementation; the .sh / .cmd wrappers
-// delegate here so the actual logic is identical on every platform.
+// The HTTP plumbing lives in _lib.mjs (shared with prompt-inject.mjs
+// and file-pack.mjs); this file is just the Stop-specific glue.
 
-import http from 'node:http';
-import { createHash } from 'node:crypto';
-import { URL } from 'node:url';
-
-const SERVER_URL = process.env.MEMWEAVE_SERVER_URL || 'http://127.0.0.1:3131';
-const TENANT = process.env.MEMWEAVE_TENANT || 'tenant_default';
-
-function readStdin() {
-  return new Promise((resolve) => {
-    let buf = '';
-    process.stdin.setEncoding('utf8');
-    process.stdin.on('data', (c) => (buf += c));
-    process.stdin.on('end', () => resolve(buf));
-    process.stdin.on('error', () => resolve(buf));
-  });
-}
-
-function postJson(path, body) {
-  return new Promise((resolve) => {
-    try {
-      const u = new URL(path, SERVER_URL);
-      const data = JSON.stringify(body);
-      const req = http.request(
-        {
-          hostname: u.hostname,
-          port: u.port || 80,
-          path: u.pathname + u.search,
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Content-Length': Buffer.byteLength(data),
-          },
-          timeout: 10000,
-        },
-        (res) => {
-          res.resume();
-          res.on('end', () => resolve());
-        }
-      );
-      req.on('error', () => resolve()); // never fail-fast
-      req.on('timeout', () => { req.destroy(); resolve(); });
-      req.write(data);
-      req.end();
-    } catch {
-      resolve();
-    }
-  });
-}
+import {
+  readStdin,
+  parseEvent,
+  deriveSessionId,
+  deriveCwd,
+  deriveScopes,
+  reportSession,
+  reportObservation,
+  makeMessageId,
+  emitHookOutput,
+} from './_lib.mjs';
 
 const raw = await readStdin();
-let event = {};
-try { event = JSON.parse(raw); } catch { event = {}; }
+const event = parseEvent(raw);
 
-const sessionId = event.session_id || event.sessionId ||
-  `codex-${createHash('sha256')
-    .update(event.cwd || process.cwd())
-    .digest('hex')
-    .slice(0, 16)}`;
+const sessionId = deriveSessionId(event);
+const cwd = deriveCwd(event);
+const scopes = deriveScopes(event);
 
-const lastAssistant = event.last_assistant_message || event.lastAssistantMessage || '';
-const turnId = event.turn_id || event.turnId || '0';
-const transcriptPath = event.transcript_path || event.transcriptPath || null;
-const cwd = event.cwd || null;
+// Codex gives the assistant's last message text on Stop. v0.5.4
+// also gives a `transcript_path` and `cwd`; both optional.
+const lastAssistant =
+  event.last_assistant_message ??
+  event.lastAssistantMessage ??
+  event.assistant_message ??
+  event.assistantMessage ??
+  '';
+const turnId = (event.turn_id ?? event.turnId ?? '0').toString();
+const transcriptPath = event.transcript_path ?? event.transcriptPath ?? null;
 
-// 1. Upsert session (idempotent on sessionId)
-// The server requires `title` (Zod schema) and `source` (must be one of
-// the enum values: 'opencode' | 'cursor' | 'claude_code' | 'codex' | 'rest_api').
-// We use a stable, short title so retries collapse to the same row.
-const sessionTitle = (lastAssistant || `Codex session in ${cwd || 'unknown cwd'}`).slice(0, 80).replace(/\s+/g, ' ');
-await postJson('/api/v1/sessions', {
-  sessionId,
-  source: 'codex',
-  title: sessionTitle,
-});
+// 1. Upsert session (idempotent on sessionId). Use a short stable
+// title so retries collapse to the same row.
+const sessionTitle = (lastAssistant || `Codex session in ${cwd || 'unknown cwd'}`)
+  .slice(0, 80)
+  .replace(/\s+/g, ' ');
+await reportSession({ sessionId, source: 'codex', title: sessionTitle });
 
-// 2. Write the assistant message as an observation (idempotent on msgId).
-// v0.5.4: also stamp a `project` scope tag derived from the Codex Stop
-// event's `cwd` (or our own process.cwd() as a fallback) so the
-// consolidation worker inherits project scoping onto the promoted
-// memory. Different projects in different directories produce
-// memories tagged with different `project` values; same cwd =
-// same project, retries stay idempotent on (sessionId, messageId).
-const projectScope = (() => {
-  try { return (cwd || process.cwd()) || ''; } catch { return ''; }
-})();
-const scopes = projectScope ? [{ key: 'project', value: projectScope }] : [];
-
+// 2. Write the assistant message as a chat.assistant observation.
+// Idempotent on (sessionId, messageId). Same content -> same hash
+// -> same id -> no duplicates on Stop replay.
 if (lastAssistant) {
-  const hash = createHash('sha256').update(lastAssistant).digest('hex').slice(0, 16);
-  const messageId = `codex-${sessionId}-turn-${turnId}-${hash}`;
-  await postJson('/api/v1/observations', {
+  const assistantMsgId = makeMessageId(
     sessionId,
-    messageId,
+    'assistant',
+    lastAssistant + turnId
+  );
+  await reportObservation({
+    sessionId,
+    messageId: assistantMsgId,
     hookType: 'chat.assistant',
     text: lastAssistant,
     scopes,
   });
 }
 
-// Tell Codex: continue normally. We never block the Stop event.
-process.stdout.write(JSON.stringify({ continue: true, suppress_output: true }) + '\n');
+// 3. Tell Codex: continue normally. We never block the Stop event.
+emitHookOutput({ continue: true, suppressOutput: true });
 process.exit(0);

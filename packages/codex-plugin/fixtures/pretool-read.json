@@ -1,0 +1,10 @@
+{
+  "hook_event_name": "PreToolUse",
+  "session_id": "test-session-codex",
+  "transcript_path": null,
+  "cwd": "D:\\ai-projects\\memory",
+  "tool_name": "Read",
+  "tool_input": {
+    "filePath": "D:\\ai-projects\\memory\\packages\\codex-plugin\\README.md"
+  }
+}

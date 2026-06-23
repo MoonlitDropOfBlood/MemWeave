@@ -1,0 +1,8 @@
+{
+  "hook_event_name": "Stop",
+  "session_id": "test-session-prompt",
+  "transcript_path": null,
+  "cwd": "D:\\ai-projects\\memory",
+  "stop_hook_active": true,
+  "last_assistant_message": "I found 3 prior conversations about MemWeave plugin development in the memory store. The most recent one covers the CC marketplace format we discussed last Tuesday."
+}

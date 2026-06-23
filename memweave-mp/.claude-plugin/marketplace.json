@@ -1,0 +1,28 @@
+{
+  "name": "memweave-local",
+  "owner": {
+    "name": "MemWeave"
+  },
+  "metadata": {
+    "description": "Local MemWeave plugin marketplace (mavis-plugin + codex-plugin, both CC marketplace format).",
+    "pluginRoot": ".."
+  },
+  "plugins": [
+    {
+      "name": "memweave",
+      "version": "0.5.0",
+      "description": "Mavis (mavis) plugin for MemWeave. 10 memory_* MCP tools + 3 hooks (UserPromptSubmit, PreToolUse, Stop).",
+      "source": "packages/mavis-plugin",
+      "category": "Developer Tools",
+      "tags": ["memory", "long-term-memory", "agent-memory", "mavis"]
+    },
+    {
+      "name": "memweave-codex",
+      "version": "0.6.0",
+      "description": "OpenAI Codex plugin for MemWeave. 10 memory_* MCP tools + 3 hooks (UserPromptSubmit, PreToolUse, Stop).",
+      "source": "packages/codex-plugin",
+      "category": "Developer Tools",
+      "tags": ["memory", "long-term-memory", "agent-memory", "codex"]
+    }
+  ]
+}

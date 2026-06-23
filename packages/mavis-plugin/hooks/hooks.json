@@ -32,8 +32,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "$PLUGIN_DIR/hooks/stop.sh",
-            "commandWindows": "$PLUGIN_DIR\\hooks\\stop.cmd",
+            "command": "$PLUGIN_DIR/hooks/writeback.sh",
+            "commandWindows": "$PLUGIN_DIR\\hooks\\writeback.cmd",
             "timeout": 30,
             "statusMessage": "MemWeave: writing session to memory"
           }

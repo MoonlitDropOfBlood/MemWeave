@@ -1,0 +1,7 @@
+{
+  "hook_event_name": "UserPromptSubmit",
+  "session_id": "test-session-prompt",
+  "transcript_path": null,
+  "cwd": "D:\\ai-projects\\memory",
+  "prompt": "Find me the previous conversations about MemWeave plugin development."
+}

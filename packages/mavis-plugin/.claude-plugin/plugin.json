@@ -1,0 +1,25 @@
+{
+  "name": "memweave",
+  "version": "0.5.0",
+  "description": "Local-first, tiered memory for Mavis (mavis) agents. Injects relevant long-term memories into the system prompt at UserPromptSubmit, queues file_pack memories on file-touching tool calls (PreToolUse), and writes completed turns back to the MemWeave server on Stop, so high-signal facts are consolidated into durable memory across sessions.",
+  "author": {
+    "name": "MemWeave",
+    "url": "https://github.com/MoonlitDropOfBlood/MemWeave"
+  },
+  "homepage": "https://github.com/MoonlitDropOfBlood/MemWeave/tree/main/packages/mavis-plugin",
+  "repository": "https://github.com/MoonlitDropOfBlood/MemWeave",
+  "license": "MIT",
+  "keywords": ["memory", "context", "agent-memory", "long-term-memory", "memweave", "mavis"],
+  "mcpServers": "./.mcp.json",
+  "hooks": "./hooks/hooks.json",
+  "interface": {
+    "displayName": "MemWeave",
+    "shortDescription": "Local-first long-term memory for Mavis",
+    "longDescription": "MemWeave gives your Mavis (mavis) agent a long-term memory. The plugin auto-exposes 10 memory_* MCP tools (save, recall, search, expand, etc.), injects relevant memories into the system prompt on UserPromptSubmit and file-touching tool calls, and writes completed turns back to the local server on Stop, so high-signal facts are consolidated into durable memory across sessions.",
+    "developerName": "MemWeave",
+    "category": "Developer Tools",
+    "capabilities": ["Read", "Write"],
+    "websiteURL": "https://github.com/MoonlitDropOfBlood/MemWeave",
+    "brandColor": "#3B7C6E"
+  }
+}

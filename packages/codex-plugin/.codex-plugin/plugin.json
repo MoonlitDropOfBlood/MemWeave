@@ -1,7 +1,7 @@
 {
   "name": "memweave",
-  "version": "0.5.4",
-  "description": "Local-first, tiered memory for Codex agents. Injects relevant long-term memories into the system prompt and writes completed turns back to the MemWeave server for consolidation.",
+  "version": "0.6.0",
+  "description": "Local-first, tiered memory for OpenAI Codex agents. Injects relevant long-term memories into the system prompt at UserPromptSubmit, queues file_pack memories on file-touching tool calls (PreToolUse), and writes completed turns back to the MemWeave server on Stop, so high-signal facts are consolidated into durable memory across sessions.",
   "author": {
     "name": "MemWeave",
     "url": "https://github.com/MoonlitDropOfBlood/MemWeave"
@@ -9,13 +9,13 @@
   "homepage": "https://github.com/MoonlitDropOfBlood/MemWeave/tree/main/packages/codex-plugin",
   "repository": "https://github.com/MoonlitDropOfBlood/MemWeave",
   "license": "MIT",
-  "keywords": ["memory", "context", "agent-memory", "long-term-memory", "memweave"],
+  "keywords": ["memory", "context", "agent-memory", "long-term-memory", "memweave", "codex"],
   "mcpServers": "./.mcp.json",
   "hooks": "./hooks/hooks.json",
   "interface": {
     "displayName": "MemWeave",
     "shortDescription": "Local-first long-term memory for Codex",
-    "longDescription": "MemWeave gives your Codex agent a long-term memory. The plugin auto-exposes 10 memory_* MCP tools (save, recall, search, expand, etc.) and writes completed turns back to the local server on Stop, so high-signal facts are consolidated into durable memory across sessions.",
+    "longDescription": "MemWeave gives your Codex agent a long-term memory. The plugin auto-exposes 10 memory_* MCP tools (save, recall, search, expand, etc.), injects relevant memories into the system prompt on UserPromptSubmit and file-touching tool calls, and writes completed turns back to the local server on Stop, so high-signal facts are consolidated into durable memory across sessions.",
     "developerName": "MemWeave",
     "category": "Developer Tools",
     "capabilities": ["Read", "Write"],

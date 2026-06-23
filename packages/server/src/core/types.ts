@@ -39,7 +39,7 @@ export type ScopeLevel = z.infer<typeof ScopeLevelSchema>;
 export const MemorySourceSchema = z.enum(['user_explicit', 'agent_capture', 'system_inferred']);
 export type MemorySource = z.infer<typeof MemorySourceSchema>;
 
-export const SourceClientSchema = z.enum(['opencode', 'cursor', 'claude_code', 'codex', 'rest_api']);
+export const SourceClientSchema = z.enum(['opencode', 'cursor', 'claude_code', 'codex', 'mavis', 'rest_api']);
 export type SourceClient = z.infer<typeof SourceClientSchema>;
 
 export const ScopeTagSchema = z.object({
