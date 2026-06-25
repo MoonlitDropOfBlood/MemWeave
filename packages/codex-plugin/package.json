@@ -9,8 +9,9 @@
     "test:prompt-inject": "node hooks/prompt-inject.mjs < fixtures/user-prompt.json",
     "test:file-pack": "node hooks/file-pack.mjs < fixtures/pretool-read.json",
     "test:writeback": "node hooks/stop.mjs < fixtures/stop.json",
+    "test:derive-project": "node --test tests/derive-project.test.mjs",
     "test:hook": "npm run test:prompt-inject && npm run test:file-pack && npm run test:writeback",
-    "test:all": "npm run test:hook"
+    "test:all": "npm run test:hook && npm run test:derive-project"
   },
   "engines": {
     "node": ">=20"

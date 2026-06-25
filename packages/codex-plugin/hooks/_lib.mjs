@@ -11,7 +11,7 @@ import http from 'node:http';
 import https from 'node:https';
 import { createHash } from 'node:crypto';
 import { readFileSync, statSync } from 'node:fs';
-import { basename, dirname, join } from 'node:path';
+import { basename, isAbsolute, join, resolve } from 'node:path';
 import { URL } from 'node:url';
 
 export const SERVER_URL =
@@ -101,7 +101,7 @@ function readGitConfig(cwd) {
   }
   let configPath;
   if (stat.isFile()) {
-    // worktree: .git is a file pointing to gitdir
+    // worktree: .git is a file pointing to a gitdir under the main repo
     let content;
     try {
       content = readFileSync(gitPath, 'utf8');
@@ -110,7 +110,7 @@ function readGitConfig(cwd) {
     }
     const m = content.match(/gitdir:\s*(.+)/);
     if (!m) return null;
-    configPath = join(dirname(m[1].trim()), 'config');
+    configPath = resolveConfigPathFromGitdir(m[1].trim());
   } else if (stat.isDirectory()) {
     configPath = join(gitPath, 'config');
   } else {
@@ -121,6 +121,46 @@ function readGitConfig(cwd) {
   } catch {
     return null;
   }
+}
+
+/**
+ * Given a worktree's gitdir path (e.g. `.../main/.git/worktrees/wt-xxx`),
+ * return the path to the config file that holds the shared `[remote
+ * "origin"]` block. Real worktree configs only contain branch info —
+ * the origin URL lives in the main repo's shared config.
+ *
+ * Strategy (matches git's own config resolution):
+ *   1. Read `<gitdir>/commondir` (a file containing either `.` or a
+ *      path to the shared gitdir). Resolve relative paths against the
+ *      gitdir. Use `<resolved>/config`.
+ *   2. Otherwise, if `gitdir` contains `/worktrees/`, strip the
+ *      `/worktrees/<wt-name>` suffix to recover the main gitdir.
+ *   3. Otherwise, fall back to `<gitdir>/config` (best-effort).
+ */
+function resolveConfigPathFromGitdir(gitdir) {
+  // 1. Try the commondir file (canonical git way).
+  try {
+    const raw = readFileSync(join(gitdir, 'commondir'), 'utf8');
+    const trimmed = raw.trim();
+    if (trimmed) {
+      const resolved = isAbsolute(trimmed) ? trimmed : resolve(gitdir, trimmed);
+      return join(resolved, 'config');
+    }
+  } catch {
+    /* no commondir file — fall through */
+  }
+
+  // 2. Walk up if gitdir contains /worktrees/. Normalize separators
+  //    first so the search is correct on Windows; pass the
+  //    forward-slash prefix to join() — path.join normalizes on Windows.
+  const normalized = gitdir.replace(/\\/g, '/').replace(/\/+$/, '');
+  const wtIdx = normalized.lastIndexOf('/worktrees/');
+  if (wtIdx !== -1) {
+    return join(normalized.slice(0, wtIdx), 'config');
+  }
+
+  // 3. Best-effort: the worktree's own config.
+  return join(gitdir, 'config');
 }
 
 function extractOriginUrl(gitConfig) {
