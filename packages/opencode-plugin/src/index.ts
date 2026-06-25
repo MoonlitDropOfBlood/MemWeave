@@ -1,6 +1,7 @@
 import type { Plugin } from '@opencode-ai/plugin';
 import type { Model } from '@opencode-ai/sdk';
 import { MemweaveInjectClient, type InjectResponse } from './client.js';
+import { deriveProject } from './derive-project.js';
 
 const API = process.env.MEMWEAVE_URL || 'http://127.0.0.1:3131';
 const TIMEOUT = Number(process.env.MEMWEAVE_PLUGIN_TIMEOUT) || 10000;
@@ -176,22 +177,27 @@ export const MemweaveInjectPlugin: Plugin = async ({ client: ocClient }) => {
       // message (or the assistant text, whichever we have).
       const title = text.slice(0, 80).replace(/\s+/g, ' ');
 
-      // v0.5.4: project scoping. The OpenCode plugin runs in the
-      // user's project root, so `process.cwd()` is a stable
-      // identifier for the project the user is working in. The
-      // server stores this on the observation + (via the
-      // consolidation worker) on the promoted memory, so
-      // cross-project searches / the Web UI's project filter can
-      // see them as distinct.
-      const projectScope = (() => {
-        try { return process.cwd(); } catch { return ''; }
-      })();
-      const scopes = projectScope
-        ? [{ key: 'project' as const, value: projectScope }]
-        : [];
+      // v0.7.0: project scoping — resolve cwd → project name (not the
+      // raw cwd path). Cascade mirrors server-side `resolveProject`:
+      //   git remote origin URL last segment → cwd basename → cwd absolute
+      // The same resolved name flows into:
+      //   - `reportSession({ project })` → `sessions.project` column
+      //   - `reportObservation({ scopes })` → `observations.scopes_json`
+      //     → inherited onto promoted memories by the consolidation worker
+      // This keeps session.project and observation.scopes consistent, so
+      // the web UI's project filter (when it lands) doesn't show two
+      // different views of the same project.
+      const cwd = (() => { try { return process.cwd(); } catch { return ''; } })();
+      const project = deriveProject(cwd);
+      const scopes = project ? [{ key: 'project' as const, value: project }] : [];
 
       try {
-        await client.reportSession({ sessionId: sessionID, source: 'opencode', title });
+        await client.reportSession({
+          sessionId: sessionID,
+          source: 'opencode',
+          title,
+          project: project || undefined
+        });
         await client.reportObservation({
           sessionId: sessionID,
           messageId: messageID,

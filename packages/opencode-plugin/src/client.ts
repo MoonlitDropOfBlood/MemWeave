@@ -20,6 +20,17 @@ export interface ReportSessionRequest {
   source: 'opencode' | 'cli' | 'mcp' | 'web' | 'sdk';
   title: string;
   deviceId?: string;
+  /**
+   * v0.7.0+: resolved project name (git remote last segment → cwd
+   * basename → absolute path). Server stores this on `sessions.project`.
+   * The observation's `scopes[]` already carries the same value (so
+   * the consolidation worker can inherit project scoping onto the
+   * promoted memory); this field keeps the session row consistent.
+   *
+   * Optional for back-compat — v0.6.x server treats it as unknown
+   * and ignores it (Zod schema on server has it `.optional()`).
+   */
+  project?: string;
 }
 
 export interface ObservationScope {
