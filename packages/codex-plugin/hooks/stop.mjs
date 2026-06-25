@@ -16,6 +16,7 @@ import {
   parseEvent,
   deriveSessionId,
   deriveCwd,
+  deriveProjectScope,
   deriveScopes,
   reportSession,
   reportObservation,
@@ -28,6 +29,9 @@ const event = parseEvent(raw);
 
 const sessionId = deriveSessionId(event);
 const cwd = deriveCwd(event);
+// v0.7.0: project = git remote last segment (or basename) -- same
+// cascade as the other 3 implementations (server + mavis + opencode).
+const project = deriveProjectScope(event);
 const scopes = deriveScopes(event);
 
 // Codex gives the assistant's last message text on Stop. v0.5.4
@@ -42,15 +46,21 @@ const turnId = (event.turn_id ?? event.turnId ?? '0').toString();
 const transcriptPath = event.transcript_path ?? event.transcriptPath ?? null;
 
 // 1. Upsert session (idempotent on sessionId). Use a short stable
-// title so retries collapse to the same row.
+// title so retries collapse to the same row. v0.7.0: also pass the
+// resolved project name so the server can fill sessions.project;
+// the row is frozen on first write (design D3), so subsequent
+// Stop replays with the same sessionId leave project untouched.
 const sessionTitle = (lastAssistant || `Codex session in ${cwd || 'unknown cwd'}`)
   .slice(0, 80)
   .replace(/\s+/g, ' ');
-await reportSession({ sessionId, source: 'codex', title: sessionTitle });
+await reportSession({ sessionId, source: 'codex', title: sessionTitle, project });
 
 // 2. Write the assistant message as a chat.assistant observation.
 // Idempotent on (sessionId, messageId). Same content -> same hash
-// -> same id -> no duplicates on Stop replay.
+// -> same id -> no duplicates on Stop replay. The `scopes` value
+// already carries the resolved project name (not the raw cwd), so
+// the consolidation worker inherits the project onto the promoted
+// memory (v0.7.0).
 if (lastAssistant) {
   const assistantMsgId = makeMessageId(
     sessionId,

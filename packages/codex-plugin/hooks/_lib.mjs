@@ -1,7 +1,7 @@
 // MemWeave Codex plugin -- shared library for hook scripts.
 //
 // Cross-platform Node, no native deps. Imported by prompt-inject.mjs,
-// file-pack.mjs, and writeback.mjs so HTTP plumbing lives in one place.
+// file-pack.mjs, and stop.mjs so HTTP plumbing lives in one place.
 //
 // Convention: every helper returns `undefined` on any failure (network
 // error, parse error, missing field). Hook scripts use this to stay
@@ -10,6 +10,8 @@
 import http from 'node:http';
 import https from 'node:https';
 import { createHash } from 'node:crypto';
+import { readFileSync, statSync } from 'node:fs';
+import { basename, dirname, join } from 'node:path';
 import { URL } from 'node:url';
 
 export const SERVER_URL =
@@ -58,8 +60,84 @@ export function deriveCwd(event) {
   }
 }
 
+/**
+ * v0.7.0: Resolve a project name from a working directory.
+ *
+ * Cascade (mirrors `packages/server/src/util/resolve-project.ts` per
+ * the design spec D1; same behaviour across all 4 implementations --
+ * the 3 plugin hook scripts + the server-side backfill helper):
+ *   1. git remote "origin" URL → last path segment
+ *      (e.g. `git@github.com:foo/memweave.git` → `memweave`)
+ *   2. cwd basename
+ *   3. cwd absolute path
+ *
+ * Pure FS, no `git` subprocess spawn (per D6). Any FS read failure
+ * (missing .git, unreadable config, worktree with dangling gitdir)
+ * is caught and falls through to basename. Returns '' only for an
+ * empty cwd -- the upstream call site should treat that as
+ * "unknown project" and skip the scope.
+ */
+export function deriveProjectFromCwd(cwd) {
+  if (!cwd) return '';
+  const config = readGitConfig(cwd);
+  if (config) {
+    const url = extractOriginUrl(config);
+    if (url) {
+      const last = lastSegment(url);
+      if (last) return last;
+    }
+  }
+  const base = basename(cwd);
+  return base || cwd;
+}
+
+function readGitConfig(cwd) {
+  const gitPath = join(cwd, '.git');
+  let stat;
+  try {
+    stat = statSync(gitPath);
+  } catch {
+    return null;
+  }
+  let configPath;
+  if (stat.isFile()) {
+    // worktree: .git is a file pointing to gitdir
+    let content;
+    try {
+      content = readFileSync(gitPath, 'utf8');
+    } catch {
+      return null;
+    }
+    const m = content.match(/gitdir:\s*(.+)/);
+    if (!m) return null;
+    configPath = join(dirname(m[1].trim()), 'config');
+  } else if (stat.isDirectory()) {
+    configPath = join(gitPath, 'config');
+  } else {
+    return null;
+  }
+  try {
+    return readFileSync(configPath, 'utf8');
+  } catch {
+    return null;
+  }
+}
+
+function extractOriginUrl(gitConfig) {
+  const re = /\[remote\s+"origin"\][^\[]*?url\s*=\s*([^\s\n]+)/;
+  const m = gitConfig.match(re);
+  return m ? m[1].trim() : null;
+}
+
+function lastSegment(url) {
+  const cleaned = url.replace(/\.git$/, '');
+  // Split on both / and : (the `:` appears in scp-style URLs like git@github.com:user/repo)
+  const parts = cleaned.split(/[/:]/).filter(Boolean);
+  return parts.length > 0 ? parts[parts.length - 1] : '';
+}
+
 export function deriveProjectScope(event) {
-  return deriveCwd(event);
+  return deriveProjectFromCwd(deriveCwd(event));
 }
 
 export function deriveScopes(event) {
@@ -136,11 +214,12 @@ export async function requestInjection({
   });
 }
 
-export async function reportSession({ sessionId, source, title, deviceId }) {
+export async function reportSession({ sessionId, source, title, project, deviceId }) {
   return postJson('/api/v1/sessions', {
     sessionId,
     source,
     title,
+    project,
     deviceId,
   });
 }

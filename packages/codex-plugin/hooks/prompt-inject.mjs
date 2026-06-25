@@ -15,6 +15,7 @@ import {
   parseEvent,
   deriveSessionId,
   deriveCwd,
+  deriveProjectScope,
   deriveScopes,
   requestInjection,
   reportSession,
@@ -28,6 +29,9 @@ const event = parseEvent(raw);
 
 const sessionId = deriveSessionId(event);
 const cwd = deriveCwd(event);
+// v0.7.0: project = git remote last segment (or basename) -- same
+// cascade as the other 3 implementations (server + mavis + opencode).
+const project = deriveProjectScope(event);
 const scopes = deriveScopes(event);
 
 // Codex mirrors CC's prompt field; tolerate camelCase variants too.
@@ -39,12 +43,16 @@ if (!prompt) {
 
 // 1. Upsert session (idempotent). The server requires `title` +
 // `source`. Use a short stable title from the first 80 chars of the
-// prompt so retries collapse to the same row.
+// prompt so retries collapse to the same row. v0.7.0: also pass the
+// resolved project name so the server can fill sessions.project.
 const title = prompt.slice(0, 80).replace(/\s+/g, ' ');
-await reportSession({ sessionId, source: 'codex', title });
+await reportSession({ sessionId, source: 'codex', title, project });
 
 // 2. Write the user message as a chat.user observation. Idempotent
-// on (sessionId, messageId) via the JSON envelope in tool_input.
+// on (sessionId, messageId) via the JSON envelope in tool_input. The
+// `scopes` value already carries the resolved project name (not the
+// raw cwd), so the consolidation worker inherits the project onto
+// the promoted memory (v0.7.0).
 const userMsgId = makeMessageId(sessionId, 'user', prompt);
 await reportObservation({
   sessionId,
