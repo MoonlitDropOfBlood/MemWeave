@@ -57,6 +57,13 @@ The plugin itself is a thin coordinator — no business logic. All memory work h
 | `MEMWEAVE_URL` | `http://127.0.0.1:3131` | MemWeave server base URL |
 | `MEMWEAVE_PLUGIN_TIMEOUT` | `10000` (ms) | Per-inject-request timeout. Overridable. |
 
+## Versioning
+
+| Plugin version | Server version | Notes |
+|---|---|---|
+| 0.5.x | ≥ 0.5.4 | Sends `scopes: [{ key: 'project', value: cwd }]` on every observation. The server's consolidation worker inherits the scope onto the promoted memory. |
+| 0.7.0 | ≥ 0.7.0 | Sends the **resolved project name** on every session POST (`project` field on `POST /api/v1/sessions`) and uses it as the `scopes: [{ key: 'project', value: <name> }]` value on every observation POST. The `deriveProject(cwd)` cascade (git remote last segment → basename → absolute path, with worktree walk-up to the main gitdir via the `commondir` file) lives in `src/derive-project.ts`. Run `npm test` (now includes `derive-project.test.ts`, 9 cascade cases including 2 real-FS worktree walk-up tests via `mkdtempSync`). |
+
 ## License
 
 MIT

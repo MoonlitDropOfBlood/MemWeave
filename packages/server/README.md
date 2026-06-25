@@ -620,6 +620,19 @@ A: 服务端没找到 `dist/web/`，运行 `npm run web:build` 即可。
 
 ---
 
+## 版本说明
+
+| Server 版本 | 关联 plugin | 关键变化 |
+|---|---|---|
+| 0.5.4 | opencode-plugin v0.5.x | 引入 `scopes.project`，consolidation 把 project 透传到 long-term memory。`POST /api/v1/sessions` / `POST /api/v1/observations` idempotent。 |
+| 0.5.7 | — | `memweave start` 改为后台守护进程（detached child + PID 文件），无需 `Start-Process -WindowStyle Hidden` 黑魔法。 |
+| 0.6.0 | mavis-plugin v0.5.0、codex-plugin v0.6.0 | `SourceClient` enum 增 `'mavis'`；lockstep 同步 `POST /api/v1/sessions` 的 zod schema。 |
+| 0.7.0 | opencode-plugin v0.7.0、mavis-plugin v0.7.0、codex-plugin v0.7.0 | **跨包 project scope 传播**：`sessions.project` 列 + 启动时一次性 backfill + 4 个包共享的 `deriveProject(cwd)` cascade（git remote last segment → basename → absolute path；worktree 走 `commondir` 回到主 gitdir）。`memory_save` enriched payload 恢复 `sourceClient/sourceDeviceId/sourceSessionId` 字段。 |
+
+详见根目录 `CHANGELOG.md` 的 `[0.7.0]` 章节。
+
+---
+
 ## 许可证
 
 本仓库暂未声明开源许可证，使用前请联系作者。

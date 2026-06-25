@@ -179,6 +179,7 @@ and exits 0. Inspect the response JSON to see whether the
 | 0.1.0 | ≥ 0.5.3 | Adds `codex` to the source enum (v0.5.3+) |
 | 0.5.4 | ≥ 0.5.4 | Sends `scopes: [{ key: 'project', value: cwd }]` on every observation. The server's consolidation worker inherits the scope onto the promoted memory, so different Codex projects stay separate in search + the Web UI project filter |
 | 0.6.0 | ≥ 0.5.6 | Brings parity with the `opencode-plugin` and `mavis-plugin`: adds `UserPromptSubmit` (user message writeback + `prompt_delta` injection) and `PreToolUse` (file_pack injection). The `Stop` hook is unchanged but now shares `_lib.mjs` with the new hooks. |
+| 0.7.0 | ≥ 0.7.0 | Sends the **resolved project name** on every session POST (`project` field on `POST /api/v1/sessions`) and uses it as the `scopes: [{ key: 'project', value: <name> }]` value on every observation POST (replacing the raw `event.cwd` path). The `deriveProjectFromCwd` cascade (git remote last segment → basename → absolute path, with worktree walk-up to the main gitdir) lives in `hooks/_lib.mjs`. Run `npm run test:all` (now includes `test:derive-project`, 5 cascade cases). |
 
 ## Known limitations
 

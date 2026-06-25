@@ -71,6 +71,133 @@ touch both (or core/shared infrastructure).
 
 ---
 
+## [0.7.0] — 2026-06-26
+
+### Added — project scope propagation (cross-package)
+
+`memweave` sessions now carry a resolved **project name** end to end
+(plugin → server → DB → retrieval). The three engines (opencode,
+mavis, codex) all run the same `deriveProject(cwd)` cascade on
+their event hooks and send the resolved name on the `session` POST
+and as the `scopes: [{ key: 'project', value: <name> }]` value on
+every `observation` POST. The server freezes the name on the
+`sessions.project` column at INSERT time and the consolidation
+worker inherits it onto the promoted memory (so the Web UI
+"project" filter and the retrieval layers now see the right
+separation).
+
+**Cascade contract** (identical across all 4 packages):
+
+```
+git remote origin URL (last segment, strip .git)
+  → cwd basename
+  → cwd absolute path
+```
+
+**Worktree handling**: when `.git` is a file (worktree pointer
+file), the cascade walks up to the **main** gitdir via the
+`commondir` file (or by stripping `/worktrees/<wt>` from the
+gitdir path) and reads the shared config where `[remote "origin"]`
+actually lives. v0.6.x read the worktree-local gitdir and silently
+returned the worktree's basename instead of the main repo's name.
+
+### Added — [@mem-weave/server]
+
+- **`sessions.project` column** — new `TEXT` column on the
+  `sessions` table. Set on INSERT (frozen for the lifetime of the
+  row — no UPDATE path). The schema migration uses
+  `addColumnIfMissing` so existing v0.6.x databases migrate in
+  place on the first `start`.
+- **One-shot backfill at server start** — when the column is first
+  added to an existing database, the server reads each session's
+  most recent observation with a `project` scope and writes the
+  resolved name to the column. Logs an INFO line with
+  `{candidates, resolved, errored}`. The migration is idempotent
+  (only touches rows where `project IS NULL`) and runs in a
+  single transaction.
+- **`memory_save` enriched payload restored** — the `mcp/service.ts`
+  enriched return object now carries `sourceClient`,
+  `sourceDeviceId`, and `sourceSessionId` again (they were
+  silently dropped in v0.6.x). These are the fields the Web UI
+  uses to deep-link an observation back to its source session.
+- **New test files**:
+  `packages/server/tests/util/resolve-project.test.ts` (7 cases:
+  normal repo, worktree main, worktree commondir, no remote, non-git,
+  nonexistent path, empty cwd) and
+  `packages/server/tests/db/backfill-project.test.ts` (6 cases:
+  backfill success, no-scope skip, idempotent re-run, scopes_json
+  corrupt, worktree, multi-tenant isolation).
+
+### Added — [@mem-weave/opencode-plugin]
+
+- **`deriveProject(cwd)`** in the plugin's source tree
+  (`packages/opencode-plugin/src/derive-project.ts`) — mirrors
+  server's `resolveProject` cascade, no `FsAdapter` (uses real
+  `node:fs`).
+- **`ReportSessionRequest.project?: string`** — sent on the
+  `POST /api/v1/sessions` call from the `event` hook.
+- **Observation scopes use the resolved name** — `scopes` on
+  `POST /api/v1/observations` is now
+  `project ? [{ key: 'project', value: project }] : []`, not the
+  raw `process.cwd()` path.
+- **New test file**:
+  `packages/opencode-plugin/src/derive-project.test.ts` (9 cases
+  including 2 new real-FS worktree walk-up cases via `mkdtempSync`).
+
+### Added — [@mem-weave/mavis-plugin]
+
+- **`deriveProjectFromCwd(cwd)` in `hooks/_lib.mjs`** — same
+  cascade, real `node:fs` (no FsAdapter). Worktree walk-up to
+  main gitdir.
+- **`deriveProjectScope(event)`** returns the resolved name
+  (was: `basename(event.cwd)`).
+- **`reportSession({...,project})`** signature — project passed
+  on every session POST.
+- **`writeback.mjs` + `prompt-inject.mjs`** both forward
+  `project` on the session POST and use the resolved name in
+  observation `scopes`.
+- **New test script**: `npm run test:derive-project` (5 cases)
+  and `npm run test:all` (now includes it). New test file:
+  `packages/mavis-plugin/tests/derive-project.test.mjs`.
+
+### Added — [@mem-weave/codex-plugin]
+
+- Same `deriveProjectFromCwd` + `reportSession.project`
+  surface as the Mavis plugin. **`stop.mjs` + `prompt-inject.mjs`**
+  both forward `project` and use the resolved name in
+  observation `scopes`.
+- **New test script**: `npm run test:derive-project` (5 cases)
+  and `npm run test:all`. New test file:
+  `packages/codex-plugin/tests/derive-project.test.mjs`.
+
+### Fixed
+
+- **All 4 packages**: `.git` worktree handling — the previous
+  implementation read the worktree-local gitdir (which has no
+  `[remote "origin"]` block) and silently fell back to the
+  worktree's basename. The new implementation walks up to the
+  main gitdir via the `commondir` file (or by stripping
+  `/worktrees/<wt>` from the gitdir path) and reads the shared
+  config. Verified end-to-end against the live v0.7.0 server
+  with the worktree at `D:\ai-projects\memory\.worktrees\wt-970e42f5`:
+  sessions now resolve to `project="mem-weave"` (from
+  `git@gitee.com:Duke_Bit/mem-weave.git`) instead of
+  `project="wt-970e42f5"`.
+
+### Migration from v0.6.x
+
+No action required for the schema migration — `addColumnIfMissing`
+runs on every server start and is a no-op once the column exists.
+The backfill runs once on the first start after the upgrade and is
+idempotent on subsequent restarts. Plugin authors that depended on
+`scopes: [{ key: 'project', value: <raw-cwd-path> }]` (i.e. the
+raw `event.cwd` string) will see those values replaced by the
+resolved project name; downstream search/injection code that
+filtered on the raw path needs to be updated to filter on the
+resolved name.
+
+---
+
 ## [0.6.0] — 2026-06-23
 
 ### Added — [@mem-weave/server]

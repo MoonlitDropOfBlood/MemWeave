@@ -276,6 +276,7 @@ state.
 | Plugin version | Server version | Notes |
 |---|---|---|
 | 0.5.0 | ≥ 0.6.0 | Adds `mavis` to the `SourceClient` enum (server v0.6.0+). Brings parity with the `opencode-plugin`: UserPromptSubmit + PreToolUse + Stop. |
+| 0.7.0 | ≥ 0.7.0 | Sends the **resolved project name** on every session POST (`project` field on `POST /api/v1/sessions`) and uses it as the `scopes: [{ key: 'project', value: <name> }]` value on every observation POST. The `deriveProjectFromCwd` cascade (git remote last segment → basename → absolute path, with worktree walk-up to the main gitdir) lives in `hooks/_lib.mjs`. Run `npm run test:all` (now includes `test:derive-project`, 5 cascade cases). |
 
 ## Known limitations
 
