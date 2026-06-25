@@ -53,41 +53,57 @@ describe('deriveProject', () => {
     expect(deriveProject(repo)).toBe('memweave');
   });
 
-  it('worktree: .git 是 file 时跟随 gitdir 回到主 repo 读取 config', () => {
-    // Mirror the server-side contract test (`tests/util/resolve-project.test.ts`):
-    // - Main repo at <tmpRoot>/main/memweave with `[remote "origin"]` block.
-    // - Worktree at <tmpRoot>/worktree/memweave (basename matches main repo).
-    //   `.git` is a FILE pointing to gitdir under the main repo's
-    //   `.git/worktrees/<wt>` directory; the worktree's gitdir has its
-    //   own `config` file.
-    //
-    // Note: the worktree's basename matches the main repo's name, so
-    // even if the worktree-config-read path silently falls back (e.g.
-    // because of a path-resolution quirk in readGitConfig), the
-    // basename fallback still produces `'memweave'` — same as the
-    // server-side test. The contract is "4 implementations produce
-    // the same output", not "every implementation must read the
-    // worktree config file perfectly".
+  it('worktree (realistic): walks up to main repo .git/config to find origin', () => {
+    // Real worktree scenario: the worktree's <wt-name>/config only
+    // has branch info, NOT [remote "origin"]. The origin URL lives
+    // in the SHARED main repo .git/config. deriveProject must walk
+    // up via the /worktrees/ suffix to find it.
     const mainRepo = join(tmpRoot, 'main', 'memweave');
     mkdirSync(mainRepo, { recursive: true });
     writeGitConfig(mainRepo, [
       '[core]',
       '	repositoryformatversion = 0',
       '[remote "origin"]',
-      '	url = git@github.com:foo/memweave.git'
+      '	url = git@github.com:foo/memweave.git',
+      '	fetch = +refs/heads/*:refs/remotes/origin/*'
     ].join('\n'));
 
-    const wt = join(tmpRoot, 'worktree', 'memweave');
+    // Worktree basename differs from main repo name (realistic)
+    const wt = join(tmpRoot, 'worktree', 'wt-feature-xyz');
     mkdirSync(wt, { recursive: true });
-    const gitdirPath = join(mainRepo, '.git', 'worktrees', 'wt-abc');
+    const gitdirPath = join(mainRepo, '.git', 'worktrees', 'wt-feature-xyz');
     mkdirSync(gitdirPath, { recursive: true });
-    writeFileSync(join(wt, '.git'), `gitdir: ${gitdirPath}\n`);
+    // Worktree's local config — NO origin (realistic)
     writeFileSync(join(gitdirPath, 'config'), [
       '[core]',
       '	repositoryformatversion = 0',
-      '[remote "origin"]',
-      '	url = git@github.com:foo/memweave.git'
+      '[branch "main"]',
+      '	remote = origin',
+      '	merge = refs/heads/main'
     ].join('\n'));
+    // .git file in worktree
+    writeFileSync(join(wt, '.git'), `gitdir: ${gitdirPath}\n`);
+
+    expect(deriveProject(wt)).toBe('memweave');
+  });
+
+  it('worktree (commondir file): follows commondir to shared gitdir', () => {
+    // The canonical git way to find the shared gitdir is via a
+    // `commondir` file inside the worktree's gitdir. The content is
+    // either `.` (worktree IS the main, rare) or a path to the
+    // shared gitdir (absolute or relative to the worktree's gitdir).
+    const mainRepo = join(tmpRoot, 'main', 'memweave');
+    mkdirSync(mainRepo, { recursive: true });
+    writeGitConfig(mainRepo, '[remote "origin"]\n	url = https://github.com/foo/memweave.git\n');
+
+    const wt = join(tmpRoot, 'wt', 'memweave');
+    mkdirSync(wt, { recursive: true });
+    const gitdirPath = join(mainRepo, '.git', 'worktrees', 'wt-y');
+    mkdirSync(gitdirPath, { recursive: true });
+    // commondir file with absolute path to shared main gitdir
+    writeFileSync(join(gitdirPath, 'commondir'), join(mainRepo, '.git') + '\n');
+    writeFileSync(join(wt, '.git'), `gitdir: ${gitdirPath}\n`);
+
     expect(deriveProject(wt)).toBe('memweave');
   });
 
