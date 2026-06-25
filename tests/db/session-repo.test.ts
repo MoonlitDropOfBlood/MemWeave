@@ -25,7 +25,8 @@ describe('SessionRepo', () => {
       tenantId: 'tenant_default',
       deviceId: null,
       source: 'opencode',
-      title: 'Test session'
+      title: 'Test session',
+      project: null
     });
 
     const loaded = sessionRepo.getById('tenant_default', session.id);
@@ -36,10 +37,10 @@ describe('SessionRepo', () => {
   });
 
   it('lists recent sessions ordered by startedAt DESC', () => {
-    const s1 = sessionRepo.create({ tenantId: 'tenant_default', deviceId: null, source: 'opencode', title: 'first' });
+    const s1 = sessionRepo.create({ tenantId: 'tenant_default', deviceId: null, source: 'opencode', title: 'first', project: null });
     // Small sleep to ensure different timestamps
-    const s2 = sessionRepo.create({ tenantId: 'tenant_default', deviceId: null, source: 'opencode', title: 'second' });
-    const s3 = sessionRepo.create({ tenantId: 'tenant_default', deviceId: null, source: 'opencode', title: 'third' });
+    const s2 = sessionRepo.create({ tenantId: 'tenant_default', deviceId: null, source: 'opencode', title: 'second', project: null });
+    const s3 = sessionRepo.create({ tenantId: 'tenant_default', deviceId: null, source: 'opencode', title: 'third', project: null });
 
     const list = sessionRepo.listRecent('tenant_default', 10);
     expect(list.length).toBe(3);
@@ -50,14 +51,14 @@ describe('SessionRepo', () => {
 
   it('respects limit in listRecent', () => {
     for (let i = 0; i < 5; i++) {
-      sessionRepo.create({ tenantId: 'tenant_default', deviceId: null, source: 'opencode', title: `s${i}` });
+      sessionRepo.create({ tenantId: 'tenant_default', deviceId: null, source: 'opencode', title: `s${i}`, project: null });
     }
     const list = sessionRepo.listRecent('tenant_default', 3);
     expect(list.length).toBe(3);
   });
 
   it('ends a session with endedAt timestamp', () => {
-    const s = sessionRepo.create({ tenantId: 'tenant_default', deviceId: null, source: 'opencode', title: 'test' });
+    const s = sessionRepo.create({ tenantId: 'tenant_default', deviceId: null, source: 'opencode', title: 'test', project: null });
     sessionRepo.end(s.id);
     const loaded = sessionRepo.getById('tenant_default', s.id);
     expect(loaded?.endedAt).toBeTypeOf('number');
@@ -65,7 +66,7 @@ describe('SessionRepo', () => {
 
   it('lists memories associated with a session (via source_session_id)', () => {
     // First create a session
-    const s = sessionRepo.create({ tenantId: 'tenant_default', deviceId: null, source: 'opencode', title: 'test' });
+    const s = sessionRepo.create({ tenantId: 'tenant_default', deviceId: null, source: 'opencode', title: 'test', project: null });
     // Use raw DB to insert memories linked to this session (no MemoryRepo support for sourceSessionId is in scope)
     db.prepare(`
       INSERT INTO memories (id, tenant_id, tier, type, title, content, summary, concepts_json, concepts_text, files_json, importance, confidence, strength, source, scope_level, source_session_id, tau, access_count, last_decay_at, reinforcement_score, created_at, updated_at)

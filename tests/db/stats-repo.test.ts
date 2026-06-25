@@ -95,8 +95,8 @@ describe('StatsRepo.getStats', () => {
   });
 
   it('counts sessions and observations', () => {
-    sessionRepo.create({ tenantId: 'tenant_default', deviceId: null, source: 'opencode', title: 'S1' });
-    sessionRepo.create({ tenantId: 'tenant_default', deviceId: null, source: 'opencode', title: 'S2' });
+    sessionRepo.create({ tenantId: 'tenant_default', deviceId: null, source: 'opencode', title: 'S1', project: null });
+    sessionRepo.create({ tenantId: 'tenant_default', deviceId: null, source: 'opencode', title: 'S2', project: null });
     const sessionId = (db.prepare('SELECT id FROM sessions LIMIT 1').get() as { id: string }).id;
     db.prepare(`INSERT INTO observations (id, session_id, tenant_id, hook_type, tool_name, tool_input, tool_output, timestamp, memory_id, processed) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, 0)`)
       .run('o1', sessionId, 'tenant_default', 'post_tool_use', 'Read', null, null, Date.now());

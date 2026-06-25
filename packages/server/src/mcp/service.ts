@@ -77,7 +77,14 @@ export class McpService {
       confidence: 0.8,
       source: 'user_explicit' as const,
       scopeLevel,
-      scopes
+      scopes,
+      // v0.7.0 bug fix: the previous implementation dropped these three
+      // source-provenance fields from the enriched payload, so MCP-driven
+      // memory_save calls had NULL sourceClient/Device/Session in the
+      // memories table. Pass them through when present.
+      sourceClient: typeof input['sourceClient'] === 'string' ? input['sourceClient'] : null,
+      sourceDeviceId: typeof input['sourceDeviceId'] === 'string' ? input['sourceDeviceId'] : null,
+      sourceSessionId: typeof input['sourceSessionId'] === 'string' ? input['sourceSessionId'] : null
     };
     const parsed = CreateMemoryInputSchema.parse(enriched);
     return this.memoryRepo.create(parsed);

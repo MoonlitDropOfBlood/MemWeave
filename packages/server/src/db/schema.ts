@@ -30,6 +30,11 @@ CREATE TABLE IF NOT EXISTS sessions (
   source TEXT NOT NULL,
   title TEXT NOT NULL,
   summary TEXT,
+  -- v0.7.0: resolved project name (git remote last segment → cwd basename).
+  -- Nullable for legacy sessions (backfill populates from observation scopes
+  -- for sessions with at least one v0.5.4+ observation; older sessions
+  -- without scope data remain NULL).
+  project TEXT,
   started_at INTEGER NOT NULL,
   ended_at INTEGER,
   observation_count INTEGER NOT NULL DEFAULT 0,

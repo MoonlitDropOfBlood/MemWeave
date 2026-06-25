@@ -3,6 +3,7 @@ import { dirname } from 'node:path';
 import { createRequire } from 'node:module';
 import Database from 'better-sqlite3';
 import { SCHEMA_SQL } from './schema.js';
+import { backfillSessionProjects } from './backfill-project.js';
 import { logger } from '../server/logger.js';
 
 const _require = createRequire(import.meta.url);
@@ -54,6 +55,12 @@ export function openDatabase(path: string, options: OpenDatabaseOptions = {}): D
   // ALTER TABLE ... ADD COLUMN IF NOT EXISTS, so we check the schema first.
   // Idempotent: a DB that already has the column is a no-op.
   addColumnIfMissing(db, 'observations', 'scopes_json', "TEXT NOT NULL DEFAULT '[]'");
+
+  // v0.7.0: sessions.project carries the resolved project name (git remote
+  // last segment → cwd basename). Backfill runs once at startup against any
+  // sessions that have a v0.5.4+ observation carrying the project scope.
+  addColumnIfMissing(db, 'sessions', 'project', 'TEXT');
+  backfillSessionProjects(db);
 
   if (!options.skipVectorExtension) {
     try {

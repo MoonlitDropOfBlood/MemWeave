@@ -15,7 +15,8 @@ const CreateSessionSchema = z.object({
   sessionId: z.string().min(1).max(200),
   source: z.enum(['opencode', 'cursor', 'claude_code', 'codex', 'mavis', 'rest_api']),
   title: z.string().min(1).max(500),
-  deviceId: z.string().min(1).max(200).optional()
+  deviceId: z.string().min(1).max(200).optional(),
+  project: z.string().min(1).max(500).optional()
 });
 
 export function registerSessionsRoute(app: FastifyInstance, dbPath: string): void {
@@ -34,6 +35,7 @@ export function registerSessionsRoute(app: FastifyInstance, dbPath: string): voi
       deviceId: body.deviceId ?? null,
       source: body.source,
       title: body.title,
+      project: body.project ?? null,
       sessionId: body.sessionId
     });
     return reply.code(created ? 201 : 200).send({ session: record, created });

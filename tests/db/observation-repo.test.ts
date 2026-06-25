@@ -16,7 +16,7 @@ beforeEach(() => {
   db.prepare('INSERT INTO tenants (id, name, api_key_hash, created_at) VALUES (?, ?, ?, ?)')
     .run('tenant_default', 'default', 'hash', Date.now());
   // Create a session for FK
-  new SessionRepo(db).create({ tenantId: 'tenant_default', deviceId: null, source: 'opencode', title: 's' });
+  new SessionRepo(db).create({ tenantId: 'tenant_default', deviceId: null, source: 'opencode', title: 's', project: null });
   observationRepo = new ObservationRepo(db);
 });
 

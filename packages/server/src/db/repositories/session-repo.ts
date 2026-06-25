@@ -7,6 +7,8 @@ export interface CreateSessionInput {
   deviceId: string | null;
   source: SourceClient;
   title: string;
+  /** v0.7.0: resolved project name. Frozen at INSERT (no UPDATE path). */
+  project: string | null;
 }
 
 export interface SessionRecord {
@@ -16,6 +18,8 @@ export interface SessionRecord {
   source: SourceClient;
   title: string;
   summary: string | null;
+  /** v0.7.0: resolved project name (nullable for legacy sessions). */
+  project: string | null;
   startedAt: number;
   endedAt: number | null;
   observationCount: number;
@@ -39,6 +43,7 @@ interface SessionRow {
   source: SourceClient;
   title: string;
   summary: string | null;
+  project: string | null;
   started_at: number;
   ended_at: number | null;
   observation_count: number;
@@ -51,9 +56,9 @@ export class SessionRepo {
     const id = randomUUID();
     const now = Date.now();
     this.db.prepare(`
-      INSERT INTO sessions (id, tenant_id, device_id, source, title, summary, started_at, ended_at, observation_count)
-      VALUES (?, ?, ?, ?, ?, NULL, ?, NULL, 0)
-    `).run(id, input.tenantId, input.deviceId, input.source, input.title, now);
+      INSERT INTO sessions (id, tenant_id, device_id, source, title, summary, project, started_at, ended_at, observation_count)
+      VALUES (?, ?, ?, ?, ?, NULL, ?, ?, NULL, 0)
+    `).run(id, input.tenantId, input.deviceId, input.source, input.title, input.project, now);
 
     return {
       id,
@@ -62,6 +67,7 @@ export class SessionRepo {
       source: input.source,
       title: input.title,
       summary: null,
+      project: input.project,
       startedAt: now,
       endedAt: null,
       observationCount: 0
@@ -87,9 +93,9 @@ export class SessionRepo {
     // caller-supplied id we build the row directly here.
     const now = Date.now();
     this.db.prepare(`
-      INSERT INTO sessions (id, tenant_id, device_id, source, title, summary, started_at, ended_at, observation_count)
-      VALUES (?, ?, ?, ?, ?, NULL, ?, NULL, 0)
-    `).run(input.sessionId, input.tenantId, input.deviceId, input.source, input.title, now);
+      INSERT INTO sessions (id, tenant_id, device_id, source, title, summary, project, started_at, ended_at, observation_count)
+      VALUES (?, ?, ?, ?, ?, NULL, ?, ?, NULL, 0)
+    `).run(input.sessionId, input.tenantId, input.deviceId, input.source, input.title, input.project, now);
 
     return {
       record: {
@@ -99,6 +105,7 @@ export class SessionRepo {
         source: input.source,
         title: input.title,
         summary: null,
+        project: input.project,
         startedAt: now,
         endedAt: null,
         observationCount: 0,
@@ -168,6 +175,7 @@ export class SessionRepo {
       source: row.source,
       title: row.title,
       summary: row.summary,
+      project: row.project,
       startedAt: row.started_at,
       endedAt: row.ended_at,
       observationCount: row.observation_count
