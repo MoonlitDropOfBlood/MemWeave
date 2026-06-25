@@ -1,6 +1,6 @@
 {
   "name": "@mem-weave/mavis-plugin",
-  "version": "0.5.0",
+  "version": "0.7.0",
   "description": "Mavis (mavis) plugin for MemWeave. Auto-exposes 10 memory_* MCP tools, injects relevant memories on UserPromptSubmit + file-touching tool calls, and writes completed turns back to the server on Stop.",
   "license": "MIT",
   "private": true,
@@ -9,7 +9,9 @@
     "test:prompt-inject": "node hooks/prompt-inject.mjs < fixtures/user-prompt.json",
     "test:file-pack": "node hooks/file-pack.mjs < fixtures/pretool-read.json",
     "test:writeback": "node hooks/writeback.mjs < fixtures/stop.json",
-    "test:hook": "npm run test:prompt-inject && npm run test:file-pack && npm run test:writeback"
+    "test:derive-project": "node --test tests/derive-project.test.mjs",
+    "test:hook": "npm run test:prompt-inject && npm run test:file-pack && npm run test:writeback",
+    "test:all": "npm run test:hook && npm run test:derive-project"
   },
   "engines": {
     "node": ">=20"

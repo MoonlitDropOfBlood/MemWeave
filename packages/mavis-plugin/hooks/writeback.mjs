@@ -16,7 +16,7 @@ import {
   parseEvent,
   deriveSessionId,
   deriveCwd,
-  deriveScopes,
+  deriveProjectScope,
   reportSession,
   reportObservation,
   makeMessageId,
@@ -28,7 +28,10 @@ const event = parseEvent(raw);
 
 const sessionId = deriveSessionId(event);
 const cwd = deriveCwd(event);
-const scopes = deriveScopes(event);
+// v0.7.0: `deriveProjectScope` now returns the resolved project name
+// (git remote last segment → basename → absolute) instead of raw cwd.
+const project = deriveProjectScope(event);
+const scopes = project ? [{ key: 'project', value: project }] : [];
 
 const lastAssistant = (
   event.last_assistant_message ??
@@ -44,11 +47,13 @@ const turnId = (event.turn_id ?? event.turnId ?? '0').toString();
 // 1. Upsert session (idempotent on sessionId). The server's Zod schema
 // requires `title` (min 1, max 500) and `source` (one of the
 // SourceClient enum values, which now includes 'mavis'). Use a short
-// stable title so retries collapse to the same row.
+// stable title so retries collapse to the same row. v0.7.0: also
+// forward the resolved `project` so the server populates the new
+// `sessions.project` column.
 const sessionTitle = (lastAssistant || `Mavis session in ${cwd || 'unknown cwd'}`)
   .slice(0, 80)
   .replace(/\s+/g, ' ');
-await reportSession({ sessionId, source: 'mavis', title: sessionTitle });
+await reportSession({ sessionId, source: 'mavis', title: sessionTitle, project });
 
 // 2. Write the assistant message as a chat.assistant observation.
 // Idempotent on (sessionId, messageId). Same content -> same hash

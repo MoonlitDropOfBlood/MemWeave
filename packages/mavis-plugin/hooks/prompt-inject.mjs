@@ -15,7 +15,7 @@ import {
   parseEvent,
   deriveSessionId,
   deriveCwd,
-  deriveScopes,
+  deriveProjectScope,
   requestInjection,
   reportSession,
   reportObservation,
@@ -28,7 +28,10 @@ const event = parseEvent(raw);
 
 const sessionId = deriveSessionId(event);
 const cwd = deriveCwd(event);
-const scopes = deriveScopes(event);
+// v0.7.0: `deriveProjectScope` now returns the resolved project name
+// (git remote last segment → basename → absolute) instead of raw cwd.
+const project = deriveProjectScope(event);
+const scopes = project ? [{ key: 'project', value: project }] : [];
 
 // Mavis mirrors CC's prompt field; tolerate camelCase variants too.
 const prompt = (event.prompt ?? event.user_prompt ?? event.userPrompt ?? '').toString();
@@ -40,9 +43,11 @@ if (!prompt) {
 
 // 1. Upsert session (idempotent). The server requires `title` +
 // `source`. Use a short stable title from the first 80 chars of the
-// prompt so retries collapse to the same row.
+// prompt so retries collapse to the same row. v0.7.0: also forward
+// the resolved `project` so the server populates the new
+// `sessions.project` column.
 const title = prompt.slice(0, 80).replace(/\s+/g, ' ');
-await reportSession({ sessionId, source: 'mavis', title });
+await reportSession({ sessionId, source: 'mavis', title, project });
 
 // 2. Write the user message as a chat.user observation. Idempotent
 // on (sessionId, messageId) via the JSON envelope in tool_input.
