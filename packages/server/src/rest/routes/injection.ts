@@ -4,6 +4,7 @@ import { openDatabase } from '../../db/database.js';
 import { searchMemories } from '../../retrieval/search-engine.js';
 import { buildStablePack, buildDeltaPack, createContentHash, type MemoryLite } from '../../injection/bundler.js';
 import { formatMemoriesAsXml, type MemoryForFormat } from '../../injection/formatter.js';
+import { UserProfileRepo } from '../../db/repositories/user-profile-repo.js';
 
 const TENANT_DEFAULT = 'tenant_default';
 
@@ -80,7 +81,12 @@ export function registerInjectionRoute(app: FastifyInstance, dbPath: string): vo
         }
       }
 
-      const contextXml = formatMemoriesAsXml(input.phase, contextMemories);
+      // ── User profile (batch F): prepend an <about-user> section when a profile
+      // exists. The agent gets "who the user is" before the memory context.
+      const profileRepo = new UserProfileRepo(db);
+      const profile = profileRepo.get(TENANT_DEFAULT, 'default');
+
+      const contextXml = formatMemoriesAsXml(input.phase, contextMemories, profile);
       const bundleId = `${input.sessionId}:${input.phase}:${result.contentHash}`;
 
       const body: InjectResponse = {

@@ -13,6 +13,7 @@ import { EdgeRepo } from '../db/repositories/edge-repo.js';
 import { SessionRepo } from '../db/repositories/session-repo.js';
 import { ConsolidationRunRepo } from '../db/repositories/consolidation-run-repo.js';
 import { AccessLogRepo } from '../db/repositories/access-log-repo.js';
+import { UserProfileRepo, type UserProfile } from '../db/repositories/user-profile-repo.js';
 import { searchMemories as runSearch } from '../retrieval/search-engine.js';
 import { graphExpand as runGraphExpand } from '../retrieval/graph-traversal.js';
 import { runConsolidation } from '../workers/consolidator.js';
@@ -38,6 +39,7 @@ export class McpService {
   private readonly sessionRepo: SessionRepo;
   private readonly runRepo: ConsolidationRunRepo;
   private readonly accessLogRepo: AccessLogRepo;
+  private readonly profileRepo: UserProfileRepo;
   private readonly llmProvider?: LlmProvider;
   private readonly embeddingProvider?: EmbeddingProvider;
 
@@ -49,6 +51,7 @@ export class McpService {
     this.sessionRepo = new SessionRepo(this.db);
     this.runRepo = new ConsolidationRunRepo(this.db);
     this.accessLogRepo = new AccessLogRepo(this.db);
+    this.profileRepo = new UserProfileRepo(this.db);
     this.llmProvider = options.llmProvider;
     this.embeddingProvider = options.embeddingProvider;
   }
@@ -163,6 +166,20 @@ export class McpService {
       reason: input.reason ?? ''
     });
     return { ok: true, edgeId: record.id };
+  }
+
+  // ── User profile (batch F) ─────────────────────────────────────────────
+  getProfile(userKey: string = 'default'): UserProfile | null {
+    return this.profileRepo.get(this.tenantId, userKey);
+  }
+
+  updateProfile(input: { userKey?: string; traits?: string[]; summary?: string }): UserProfile {
+    return this.profileRepo.upsert({
+      tenantId: this.tenantId,
+      userKey: input.userKey ?? 'default',
+      traits: input.traits,
+      summary: input.summary
+    });
   }
 
   async graphQuery(memoryId: string, opts: { depth?: number; direction?: 'in' | 'out' | 'both'; limit?: number }): Promise<unknown> {

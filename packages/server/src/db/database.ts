@@ -40,6 +40,27 @@ CREATE INDEX IF NOT EXISTS idx_memory_vectors_tenant_dim
   ON memory_vectors(tenant_id, dimensions);
 `;
 
+/**
+ * Per-tenant user profile table (batch F — the previously-missing
+ * user-profile entity). One row per (tenant, user_key). Stores structured
+ * traits + a natural-language summary the injection bundle prepends as an
+ * `<about-user>` section so the agent always knows who it's talking to.
+ *
+ * Created as idempotent additional DDL (not in SCHEMA_SQL) so existing DBs
+ * pick it up on next open without a migration step.
+ */
+const USER_PROFILE_TABLE_SQL = `
+CREATE TABLE IF NOT EXISTS user_profiles (
+  tenant_id TEXT NOT NULL,
+  user_key TEXT NOT NULL,
+  traits_json TEXT NOT NULL DEFAULT '[]',
+  summary TEXT NOT NULL DEFAULT '',
+  updated_at INTEGER NOT NULL,
+  PRIMARY KEY (tenant_id, user_key),
+  FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE
+);
+`;
+
 export interface OpenDatabaseOptions {
   /** When provided, ensures the vectors table exists for these dimensions (idempotent). */
   vectorDimensions?: number;
@@ -68,6 +89,10 @@ export function openDatabase(path: string, options: OpenDatabaseOptions = {}): D
     // retrieval/vector-search.ts.)
     db.exec(VECTOR_TABLE_SQL);
   }
+
+  // User profile table (batch F). Always created — it's tiny and the
+  // injection layer reads from it on every session_start.
+  db.exec(USER_PROFILE_TABLE_SQL);
 
   return db;
 }

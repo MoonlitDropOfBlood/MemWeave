@@ -26,6 +26,8 @@ import { patternsTool } from './tools/patterns.js';
 import { consolidateTool } from './tools/consolidate.js';
 import { forgetTool } from './tools/forget.js';
 import { createEdgeTool } from './tools/create-edge.js';
+import { profileGetTool } from './tools/profile-get.js';
+import { profileUpdateTool } from './tools/profile-update.js';
 import type { FastifyRequest, FastifyReply } from 'fastify';
 
 const TOOLS: McpTool[] = [
@@ -39,7 +41,9 @@ const TOOLS: McpTool[] = [
   patternsTool,
   consolidateTool,
   forgetTool,
-  createEdgeTool
+  createEdgeTool,
+  profileGetTool,
+  profileUpdateTool
 ];
 
 /**
