@@ -4,6 +4,7 @@ import { homedir } from 'node:os';
 import { expandPath, loadConfig } from '../core/config.js';
 import { createHttpServer } from './http.js';
 import { startConsolidationScheduler } from './scheduler.js';
+import { startEmbedderWorker } from '../workers/embedder.js';
 import { createLlmProvider } from '../providers/llm/index.js';
 import type { LlmProvider } from '../providers/llm/index.js';
 import { createEmbeddingProvider } from '../providers/embedding/index.js';
@@ -67,9 +68,31 @@ if (process.env.MEMWEAVE_NO_SCHEDULER !== '1') {
   // Stop the scheduler gracefully on process exit
   const shutdown = (): void => {
     scheduler.stop();
+    embedderHandle?.stop();
   };
   process.once('SIGINT', shutdown);
   process.once('SIGTERM', shutdown);
+
+  // ── Background embedder worker ─────────────────────────────────────────
+  // Backfills vectors for memories that don't yet have one. Previously this
+  // worker was NEVER started (startEmbedderWorker was defined but uncalled),
+  // so the memory_vectors table stayed empty and the vector layer had nothing
+  // to search. The enricher also embeds on its own writes, but this worker is
+  // the catch-all for memories created before enrichment or when the enricher
+  // is disabled. Skip when the embedding provider is noop (no point embedding
+  // with a hash vector) or when MEMWEAVE_NO_EMBEDDER=1.
+  let embedderHandle: ReturnType<typeof startEmbedderWorker> | undefined;
+  const isNoopEmbedding = config.embedding.provider === 'noop';
+  if (process.env.MEMWEAVE_NO_EMBEDDER !== '1' && !isNoopEmbedding) {
+    embedderHandle = startEmbedderWorker({
+      dbPath,
+      provider: embeddingProvider,
+      dimensions: config.embedding.dimensions,
+      intervalMs: 5 * 60 * 1000, // every 5 minutes
+      runOnStart: true
+    });
+    logger.info({ dims: config.embedding.dimensions, interval: '5m' }, 'embedder worker started');
+  }
 }
 
 await app.listen({ host: config.server.host, port: config.server.port });

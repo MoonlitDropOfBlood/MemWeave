@@ -107,7 +107,30 @@ export class McpService {
   async searchMemories(input: Record<string, unknown>): Promise<unknown> {
     // Search engine validates its own input shape; cast is safe at
     // this boundary because every tool has a Zod-validated schema.
-    return runSearch(this.db, this.tenantId, input as unknown as Parameters<typeof runSearch>[2]);
+    const opts = input as Record<string, unknown>;
+
+    // ── Query embedding (the wiring that was missing) ────────────────────
+    // The vector layer is skipped unless `queryEmbedding` is supplied
+    // (search-engine.ts:88 guard). Previously NO caller generated one, so
+    // vector/graph/causal layers were dead and retrieval was BM25-only. When
+    // an embedding provider is configured (default: local-xenova), embed the
+    // query string here so the full 4-layer fusion actually runs.
+    if (
+      !opts.queryEmbedding &&
+      this.embeddingProvider &&
+      typeof opts.query === 'string' &&
+      opts.query.trim().length > 0 &&
+      opts.bm25Only !== true
+    ) {
+      try {
+        const vec = await this.embeddingProvider.embed(opts.query);
+        opts.queryEmbedding = vec;
+      } catch {
+        // Embedding failure is non-fatal — search degrades to BM25.
+      }
+    }
+
+    return runSearch(this.db, this.tenantId, opts as unknown as Parameters<typeof runSearch>[2]);
   }
 
   async graphQuery(memoryId: string, opts: { depth?: number; direction?: 'in' | 'out' | 'both'; limit?: number }): Promise<unknown> {

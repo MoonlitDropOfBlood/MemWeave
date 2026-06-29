@@ -60,7 +60,7 @@ export async function createHttpServer(options: CreateHttpServerOptions) {
     });
   });
 
-  registerMemoriesRoute(app, options.dbPath);
+  registerMemoriesRoute(app, options.dbPath, options.embeddingProvider);
   registerInjectionRoute(app, options.dbPath);
   registerStatsRoute(app, options.dbPath);
   registerSessionsRoute(app, options.dbPath);
