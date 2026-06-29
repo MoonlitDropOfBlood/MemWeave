@@ -58,7 +58,7 @@ export function registerConsolidationRoute(app: FastifyInstance, dbPath: string)
         promoted: result.promotedIds,
         evicted: result.evictedIds,
         merged: result.mergedPairs,
-        edgesCreated: 0,
+        edgesCreated: result.edgesCreated,
         contradictionFound: 0,
         dryRun,
         summary: result.summary

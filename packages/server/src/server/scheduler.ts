@@ -62,7 +62,7 @@ export function startConsolidationScheduler(options: SchedulerOptions): Schedule
           promoted: result.promotedIds,
           evicted: result.evictedIds,
           merged: result.mergedPairs,
-          edgesCreated: 0,
+          edgesCreated: result.edgesCreated,
           contradictionFound: 0,
           dryRun: false,
           summary: result.summary

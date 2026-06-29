@@ -5,6 +5,7 @@ import { expandPath, loadConfig } from '../core/config.js';
 import { createHttpServer } from './http.js';
 import { startConsolidationScheduler } from './scheduler.js';
 import { startEmbedderWorker } from '../workers/embedder.js';
+import { startGraphWorker } from '../workers/graph-worker.js';
 import { createLlmProvider } from '../providers/llm/index.js';
 import type { LlmProvider } from '../providers/llm/index.js';
 import { createEmbeddingProvider } from '../providers/embedding/index.js';
@@ -69,6 +70,7 @@ if (process.env.MEMWEAVE_NO_SCHEDULER !== '1') {
   const shutdown = (): void => {
     scheduler.stop();
     embedderHandle?.stop();
+    graphHandle?.stop();
   };
   process.once('SIGINT', shutdown);
   process.once('SIGTERM', shutdown);
@@ -92,6 +94,24 @@ if (process.env.MEMWEAVE_NO_SCHEDULER !== '1') {
       runOnStart: true
     });
     logger.info({ dims: config.embedding.dimensions, interval: '5m' }, 'embedder worker started');
+  }
+
+  // ── Background graph worker (edge discovery) ───────────────────────────
+  // Previously NEVER started — startGraphWorker was defined but uncalled, so
+  // the edges table stayed empty (verified: edges=0) and the graph/causal
+  // retrieval layers and the Web Graph page had nothing to render. Now runs
+  // hourly with runOnStart (the LLM extracts edge candidates from new memories).
+  // Skipped when the LLM is noop (would extract nothing) or MEMWEAVE_NO_GRAPH=1.
+  let graphHandle: ReturnType<typeof startGraphWorker> | undefined;
+  const isNoopLlm = config.llm.provider === 'noop';
+  if (process.env.MEMWEAVE_NO_GRAPH !== '1' && !isNoopLlm) {
+    graphHandle = startGraphWorker({
+      dbPath,
+      llm: llmProvider,
+      intervalMs: 60 * 60 * 1000, // hourly
+      runOnStart: true
+    });
+    logger.info({ interval: '1h' }, 'graph worker started');
   }
 }
 

@@ -25,6 +25,7 @@ import { sessionsTool } from './tools/sessions.js';
 import { patternsTool } from './tools/patterns.js';
 import { consolidateTool } from './tools/consolidate.js';
 import { forgetTool } from './tools/forget.js';
+import { createEdgeTool } from './tools/create-edge.js';
 import type { FastifyRequest, FastifyReply } from 'fastify';
 
 const TOOLS: McpTool[] = [
@@ -37,7 +38,8 @@ const TOOLS: McpTool[] = [
   sessionsTool,
   patternsTool,
   consolidateTool,
-  forgetTool
+  forgetTool,
+  createEdgeTool
 ];
 
 /**

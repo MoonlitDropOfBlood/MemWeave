@@ -1,8 +1,10 @@
 import type { Db } from '../db/database.js';
 import { transaction } from '../db/database.js';
+import { randomUUID } from 'node:crypto';
 import { logger } from '../server/logger.js';
 import { MemoryRepo } from '../db/repositories/memory-repo.js';
 import { evaluateObservation, type ValueGateResult } from './value-gate.js';
+import { EdgeRepo } from '../db/repositories/edge-repo.js';
 import type { ScopeTag, MemoryType } from '../core/types.js';
 
 export interface ConsolidationResult {
@@ -12,6 +14,8 @@ export interface ConsolidationResult {
   tierPromoted: number;
   evicted: number;
   merged: number;
+  /** Edges created during the merge pass (duplicates edges). */
+  edgesCreated: number;
   /** Ids of observations promoted to new memories. */
   promotedIds: string[];
   /** Ids of memories promoted short -> medium tier. */
@@ -51,6 +55,7 @@ export function runConsolidation(
       tierPromoted: 0,
       evicted: 0,
       merged: 0,
+      edgesCreated: 0,
       promotedIds: [],
       tierPromotedIds: [],
       evictedIds: [],
@@ -76,6 +81,7 @@ function runConsolidationInner(
     tierPromoted: 0,
     evicted: 0,
     merged: 0,
+    edgesCreated: 0,
     promotedIds: [],
     tierPromotedIds: [],
     evictedIds: [],
@@ -83,6 +89,7 @@ function runConsolidationInner(
     summary: ''
   };
   const DAY = 24 * 60 * 60 * 1000;
+  let edgesCreatedCount = 0;
 
   try {
     const now = Date.now();
@@ -174,17 +181,19 @@ function runConsolidationInner(
     //    will still be merged here if the operator later enriches the
     //    older memory's concepts.
     if (!options.dryRun) {
-      const merged = mergeNearDuplicates(db, tenantId, now);
-      result.merged = merged.length;
-      result.mergedPairs = merged;
+      const mergeResult = mergeNearDuplicates(db, tenantId, now);
+      result.merged = mergeResult.merged.length;
+      result.mergedPairs = mergeResult.merged;
+      edgesCreatedCount += mergeResult.edgesCreated;
     }
 
     result.summary =
-      `Promoted ${result.promoted} obs to memory, evicted ${result.evicted}, tier-promoted ${result.tierPromoted}, merged ${result.merged} pairs`;
+      `Promoted ${result.promoted} obs to memory, evicted ${result.evicted}, tier-promoted ${result.tierPromoted}, merged ${result.merged} pairs, edges ${edgesCreatedCount}`;
   } catch (err) {
     logger.error({ err }, 'consolidation failed');
   }
 
+  result.edgesCreated = edgesCreatedCount;
   return result;
 }
 
@@ -197,7 +206,7 @@ function runConsolidationInner(
  * `MemoryRepo.create`. They use the same threshold and the same Jaccard
  * formula, so behavior is consistent.
  */
-function mergeNearDuplicates(db: Db, tenantId: string, now: number): string[][] {
+function mergeNearDuplicates(db: Db, tenantId: string, now: number): { merged: string[][]; edgesCreated: number } {
   // Load all live memories for this tenant. In a real production system
   // we'd page this; for v1 with O(thousands) memories per tenant, an
   // in-memory O(n^2) pass is acceptable (a few seconds at most).
@@ -223,6 +232,7 @@ function mergeNearDuplicates(db: Db, tenantId: string, now: number): string[][] 
   const SURVIVOR_BENEFIT = 0.05;  // bump survivor's strength on absorb
   const merged: string[][] = [];
   const absorbed = new Set<string>();
+  let edgesCreatedInMerge = 0;
 
   for (let i = 0; i < allMemories.length; i++) {
     const a = allMemories[i];
@@ -285,6 +295,27 @@ function mergeNearDuplicates(db: Db, tenantId: string, now: number): string[][] 
           SET deleted_at = ?, eviction_reason = ?
           WHERE id = ?
         `).run(now, 'merged_into_consolidation', b.id);
+        // ── Write a `duplicates` edge (survivor → absorbed) ──────────────
+        // Previously the merge step soft-deleted b and strengthened a but left
+        // NO edge, so the graph view and causal/graph retrieval layers stayed
+        // empty. Now we record a `duplicates` edge so the relationship is
+        // discoverable. Idempotent: skip if an edge of the same triple exists.
+        try {
+          const existing = db.prepare(`
+            SELECT 1 FROM edges
+            WHERE from_memory_id = ? AND to_memory_id = ? AND type = 'duplicates'
+            LIMIT 1
+          `).get(a.id, b.id);
+          if (!existing) {
+            db.prepare(`
+              INSERT INTO edges (id, tenant_id, from_memory_id, to_memory_id, type, strength, reason, created_at)
+              VALUES (?, ?, ?, ?, 'duplicates', 0.9, 'merged near-duplicate during consolidation', ?)
+            `).run(randomUUID(), tenantId, a.id, b.id, now);
+            edgesCreatedInMerge++;
+          }
+        } catch {
+          // Edge write failure is non-fatal — the merge already succeeded.
+        }
         // Audit log.
         db.prepare(`
           INSERT INTO consolidation_runs (id, tenant_id, started_at, ended_at, summary, dry_run)
@@ -298,7 +329,7 @@ function mergeNearDuplicates(db: Db, tenantId: string, now: number): string[][] 
     }
   }
 
-  return merged;
+  return { merged, edgesCreated: edgesCreatedInMerge };
 }
 
 function jaccardSimilarity(a: Set<string>, b: Set<string>): number {

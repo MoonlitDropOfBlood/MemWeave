@@ -16,6 +16,7 @@ import { AccessLogRepo } from '../db/repositories/access-log-repo.js';
 import { searchMemories as runSearch } from '../retrieval/search-engine.js';
 import { graphExpand as runGraphExpand } from '../retrieval/graph-traversal.js';
 import { runConsolidation } from '../workers/consolidator.js';
+import type { EdgeType } from '../core/types.js';
 import { CreateMemoryInputSchema } from '../core/types.js';
 
 const TENANT_DEFAULT = 'tenant_default';
@@ -131,6 +132,37 @@ export class McpService {
     }
 
     return runSearch(this.db, this.tenantId, opts as unknown as Parameters<typeof runSearch>[2]);
+  }
+
+  /**
+   * Explicitly create an edge between two memories. This is the most reliable
+   * way to establish associations: the agent knows the relationship at save
+   * time (no LLM inference needed). Previously there was NO way to create an
+   * edge other than the graph-worker (LLM-based, which was never started).
+   */
+  createEdge(input: {
+    fromMemoryId: string;
+    toMemoryId: string;
+    type: EdgeType;
+    reason?: string;
+    strength?: number;
+  }): { ok: true; edgeId: string } {
+    // Validate both memories exist and are in the same tenant.
+    const from = this.memoryRepo.getById(this.tenantId, input.fromMemoryId);
+    const to = this.memoryRepo.getById(this.tenantId, input.toMemoryId);
+    if (!from) throw new Error(`Memory not found: ${input.fromMemoryId}`);
+    if (!to) throw new Error(`Memory not found: ${input.toMemoryId}`);
+    if (input.fromMemoryId === input.toMemoryId) throw new Error('Cannot link a memory to itself');
+
+    const record = this.edgeRepo.create({
+      tenantId: this.tenantId,
+      fromMemoryId: input.fromMemoryId,
+      toMemoryId: input.toMemoryId,
+      type: input.type,
+      strength: input.strength ?? 0.7,
+      reason: input.reason ?? ''
+    });
+    return { ok: true, edgeId: record.id };
   }
 
   async graphQuery(memoryId: string, opts: { depth?: number; direction?: 'in' | 'out' | 'both'; limit?: number }): Promise<unknown> {
