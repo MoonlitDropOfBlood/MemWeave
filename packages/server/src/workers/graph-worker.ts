@@ -1,4 +1,5 @@
 import { openDatabase } from '../db/database.js';
+import type { Db } from '../db/database.js';
 import { EdgeRepo } from '../db/repositories/edge-repo.js';
 import { MemoryRepo } from '../db/repositories/memory-repo.js';
 import type { LlmProvider } from '../providers/llm/index.js';
@@ -159,7 +160,7 @@ interface CandidateRow {
 }
 
 function findCandidateTargets(
-  db: import('better-sqlite3').Database,
+  db: Db,
   tenantId: string,
   mem: { id: string; title: string; summary: string; concepts_json: string }
 ): CandidateRow[] {

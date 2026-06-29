@@ -1,52 +1,58 @@
 import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
-import { createRequire } from 'node:module';
-import Database from 'better-sqlite3';
 import { SCHEMA_SQL } from './schema.js';
 import { logger } from '../server/logger.js';
+import { DatabaseAdapter, type Db } from './driver-adapter.js';
 
-const _require = createRequire(import.meta.url);
-
-export type Db = Database.Database;
+export type { Db } from './driver-adapter.js';
 
 /**
- * Default dimensions for the memory_vectors vec0 table. The actual configured
+ * Default dimensions for the `memory_vectors` table. The actual configured
  * dimensions come from the EmbeddingConfig; the table is created lazily by
- * `openDatabase` and recreated when the configured dimensions change.
+ * `openDatabase`.
  */
 export const VECTOR_DEFAULT_DIMENSIONS = 768;
 
-function vecTableName(dimensions: number): string {
-  return `memory_vectors_${dimensions}`;
-}
-
-function ensureVecTable(db: Db, dimensions: number): void {
-  const tableName = vecTableName(dimensions);
-  const exists = db
-    .prepare(`SELECT name FROM sqlite_master WHERE type='table' AND name=?`)
-    .get(tableName) as { name: string } | undefined;
-
-  if (!exists) {
-    db.exec(
-      `CREATE VIRTUAL TABLE IF NOT EXISTS ${tableName} USING vec0(
-         memory_id TEXT PRIMARY KEY,
-         tenant_id TEXT,
-         embedding float[${dimensions}]
-       )`
-    );
-  }
-}
+/**
+ * Plain (non-virtual) table that stores one Float32Array embedding per memory.
+ *
+ * Replaces the previous `vec0` virtual table (sqlite-vec). We migrated off
+ * sqlite-vec because `node:sqlite` does not support `loadExtension`, so the
+ * loadable vec0 module cannot be used. At memory-system scale (thousands of
+ * 768-dim vectors, not millions), brute-force L2 distance in pure JS over a
+ * TypedArray cache is sub-millisecond — see `retrieval/vector-search.ts` and
+ * the benchmark in `scripts/validate-node-sqlite.mjs`. No native vector
+ * extension is needed.
+ *
+ * The `dimensions` column lets a single table hold vectors of different
+ * embedding sizes (e.g. if the configured model changes); queries filter by
+ * the active dimension.
+ */
+const VECTOR_TABLE_SQL = `
+CREATE TABLE IF NOT EXISTS memory_vectors (
+  memory_id TEXT PRIMARY KEY,
+  tenant_id TEXT NOT NULL,
+  dimensions INTEGER NOT NULL,
+  embedding BLOB NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_memory_vectors_tenant_dim
+  ON memory_vectors(tenant_id, dimensions);
+`;
 
 export interface OpenDatabaseOptions {
-  /** When provided, creates the vec0 table for these dimensions (idempotent). */
+  /** When provided, ensures the vectors table exists for these dimensions (idempotent). */
   vectorDimensions?: number;
-  /** When true, skip loading sqlite-vec (useful for unit tests that don't need vectors). */
+  /**
+   * When true, skip creating the vectors table (useful for unit tests that
+   * don't exercise vector search).
+   */
   skipVectorExtension?: boolean;
 }
 
 export function openDatabase(path: string, options: OpenDatabaseOptions = {}): Db {
   mkdirSync(dirname(path), { recursive: true });
-  const db = new Database(path);
+  const db = new DatabaseAdapter(path);
   db.exec(SCHEMA_SQL);
 
   // v0.5.4+ backfill: existing DBs created before observations.scopes_json
@@ -56,30 +62,14 @@ export function openDatabase(path: string, options: OpenDatabaseOptions = {}): D
   addColumnIfMissing(db, 'observations', 'scopes_json', "TEXT NOT NULL DEFAULT '[]'");
 
   if (!options.skipVectorExtension) {
-    try {
-      // Load sqlite-vec (a no-op if the package isn't installed, but we install it
-      // as a regular dependency so the binary is always present in production).
-      // Use a dynamic import to avoid hard-failing test environments that
-      // exercise only non-vector code paths.
-      // eslint-disable-next-line @typescript-eslint/no-var-requires
-      const sqliteVec = _require('sqlite-vec');
-      sqliteVec.load(db);
-
-      const dims = options.vectorDimensions ?? VECTOR_DEFAULT_DIMENSIONS;
-      ensureVecTable(db, dims);
-    } catch (err) {
-      // sqlite-vec unavailable — vector search will be a no-op
-      // (search engine handles missing vector layer gracefully).
-      // We intentionally do not throw — rest of system must work without it.
-      logger.warn({ err: (err as Error).message }, 'sqlite-vec not available, vector search disabled');
-    }
+    // Pure-JS vector store: a plain BLOB table, no native extension required.
+    // (Previously this loaded sqlite-vec via loadExtension, which node:sqlite
+    // does not support. Brute-force JS L2 search replaces it — see
+    // retrieval/vector-search.ts.)
+    db.exec(VECTOR_TABLE_SQL);
   }
 
   return db;
-}
-
-export function getVecTableName(dimensions: number): string {
-  return vecTableName(dimensions);
 }
 
 /**

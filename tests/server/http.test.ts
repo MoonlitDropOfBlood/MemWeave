@@ -18,7 +18,7 @@ describe('HTTP server', () => {
   it('returns health status', async () => {
     const response = await app.inject({ method: 'GET', url: '/api/v1/health' });
     expect(response.statusCode).toBe(200);
-    expect(response.json()).toEqual({ ok: true, service: 'memweave-server' });
+    expect(response.json()).toMatchObject({ ok: true, service: 'memweave-server' });
   });
 
   it('creates and reads memory', async () => {

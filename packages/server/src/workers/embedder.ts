@@ -40,10 +40,10 @@ interface MemoryRowForEmbedding {
  * Background embedder worker.
  *
  * Polls the `memories` table for rows that don't yet have a corresponding
- * entry in the vec0 table, generates embeddings via the configured provider,
- * and writes them to the vec table.
+ * entry in the `memory_vectors` table, generates embeddings via the
+ * configured provider, and writes them as Float32Array BLOBs.
  *
- * When the embedding provider is `noop` (the default), this is a no-op for
+ * When the embedding provider is `noop`, this is effectively a no-op for
  * actual embeddings but the loop still runs so the structure is exercised.
  */
 export function startEmbedderWorker(options: EmbedderOptions): EmbedderHandle {
@@ -58,16 +58,17 @@ export function startEmbedderWorker(options: EmbedderOptions): EmbedderHandle {
     const result = { embedded: 0, skipped: 0, failed: 0, timestamp: Date.now() };
     try {
       const vecRepo = new VectorRepo(db, options.dimensions);
-      // Find candidate memories that lack a vector entry
-      const vecTable = `memory_vectors_${options.dimensions}`;
+      // Find candidate memories that lack a vector entry for the active
+      // dimension. memory_vectors is a single table keyed by (memory_id,
+      // dimensions), so the LEFT JOIN filters on both.
       const candidates = db.prepare(`
         SELECT m.id, m.tenant_id, m.title, m.content, m.summary, m.concepts_text
         FROM memories m
-        LEFT JOIN ${vecTable} v ON v.memory_id = m.id
+        LEFT JOIN memory_vectors v ON v.memory_id = m.id AND v.dimensions = ?
         WHERE m.tenant_id = ? AND m.deleted_at IS NULL AND v.memory_id IS NULL
         ORDER BY m.created_at ASC
         LIMIT ?
-      `).all(tenantId, batchSize) as MemoryRowForEmbedding[];
+      `).all(options.dimensions, tenantId, batchSize) as MemoryRowForEmbedding[];
 
       if (candidates.length > 0) {
         const texts = candidates.map((m) => [m.title, m.summary, m.content, m.concepts_text ?? ''].filter(Boolean).join('\n'));

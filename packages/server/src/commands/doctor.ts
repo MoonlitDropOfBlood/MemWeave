@@ -19,7 +19,7 @@ interface CheckResult {
  *  - config loads cleanly
  *  - DB file is reachable and the schema applies
  *  - port is free
- *  - sqlite-vec extension loads (when used)
+ *  - vector store (memory_vectors table) is usable
  *  - LLM provider has a usable API key (when not noop)
  *  - Embedding provider has a usable config (when not noop)
  */
@@ -64,19 +64,19 @@ export const doctorCommand: CommandHandler = async (ctx: CliContext): Promise<Co
     results.push({ name: 'port', ok: true, detail: `port ${config.server.port} appears free` });
   }
 
-  // 4. sqlite-vec
+  // 4. Vector store (memory_vectors table — pure JS, no native extension)
   try {
     const db = openDatabase(dbPath, { vectorDimensions: config.embedding.dimensions });
     try {
-      const v = (db.prepare(`SELECT vec_version() AS v`).get() as { v: string });
-      results.push({ name: 'sqlite-vec', ok: true, detail: v.v });
+      const row = db.prepare(`SELECT COUNT(*) AS cnt FROM memory_vectors`).get() as { cnt: number };
+      results.push({ name: 'vector-store', ok: true, detail: `memory_vectors table ok (${row.cnt} embeddings)` });
     } catch (err) {
-      results.push({ name: 'sqlite-vec', ok: false, detail: (err as Error).message });
+      results.push({ name: 'vector-store', ok: false, detail: (err as Error).message });
     } finally {
       db.close();
     }
   } catch {
-    results.push({ name: 'sqlite-vec', ok: false, detail: 'extension failed to load' });
+    results.push({ name: 'vector-store', ok: false, detail: 'failed to open database' });
   }
 
   // 5. LLM

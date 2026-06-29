@@ -71,3 +71,4 @@ $RECYCLE.BIN/
 # Vitest cache
 .vitest-cache/
 **/.vitest-cache/
+.worktrees/
