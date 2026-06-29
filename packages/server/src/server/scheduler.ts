@@ -1,6 +1,8 @@
 import { openDatabase } from '../db/database.js';
 import { runConsolidation, type ConsolidationResult } from '../workers/consolidator.js';
 import { ConsolidationRunRepo } from '../db/repositories/consolidation-run-repo.js';
+import type { LlmProvider } from '../providers/llm/index.js';
+import type { EmbeddingProvider } from '../providers/embedding/index.js';
 import { logger } from './logger.js';
 
 export interface SchedulerOptions {
@@ -11,6 +13,10 @@ export interface SchedulerOptions {
   tenantId?: string;
   /** Run immediately on start. Default: false. */
   runOnStart?: boolean;
+  /** LLM provider (for the enrichment phase — wired up in batch C). */
+  llmProvider?: LlmProvider;
+  /** Embedding provider (for the embedder worker — wired up in batch C/D). */
+  embeddingProvider?: EmbeddingProvider;
   /** Callback fired after each run. Useful for logging. */
   onRun?: (result: { promoted: number; evicted: number; summary: string; timestamp: number }) => void;
   /** Abort signal for graceful shutdown. */

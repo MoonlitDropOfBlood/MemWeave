@@ -6,6 +6,8 @@
  * the main server process, so the indirection through fetch is gone.
  */
 import type { Db } from '../db/database.js';
+import type { LlmProvider } from '../providers/llm/index.js';
+import type { EmbeddingProvider } from '../providers/embedding/index.js';
 import { MemoryRepo } from '../db/repositories/memory-repo.js';
 import { EdgeRepo } from '../db/repositories/edge-repo.js';
 import { SessionRepo } from '../db/repositories/session-repo.js';
@@ -21,6 +23,10 @@ const TENANT_DEFAULT = 'tenant_default';
 export interface McpServiceOptions {
   db: Db;
   tenantId?: string;
+  /** LLM provider (for search-time query embedding + future LLM tools). */
+  llmProvider?: LlmProvider;
+  /** Embedding provider (for search-time query embedding). */
+  embeddingProvider?: EmbeddingProvider;
 }
 
 export class McpService {
@@ -31,6 +37,8 @@ export class McpService {
   private readonly sessionRepo: SessionRepo;
   private readonly runRepo: ConsolidationRunRepo;
   private readonly accessLogRepo: AccessLogRepo;
+  private readonly llmProvider?: LlmProvider;
+  private readonly embeddingProvider?: EmbeddingProvider;
 
   constructor(options: McpServiceOptions) {
     this.db = options.db;
@@ -40,6 +48,8 @@ export class McpService {
     this.sessionRepo = new SessionRepo(this.db);
     this.runRepo = new ConsolidationRunRepo(this.db);
     this.accessLogRepo = new AccessLogRepo(this.db);
+    this.llmProvider = options.llmProvider;
+    this.embeddingProvider = options.embeddingProvider;
   }
 
   async createMemory(input: Record<string, unknown>): Promise<unknown> {

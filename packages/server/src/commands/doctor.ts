@@ -80,7 +80,28 @@ export const doctorCommand: CommandHandler = async (ctx: CliContext): Promise<Co
   }
 
   // 5. LLM
-  if (config.llm.provider === 'openai-compatible') {
+  if (config.llm.provider === 'ollama') {
+    const ollama = config.llm.ollama ?? { host: '127.0.0.1', port: 11434, model: config.llm.model, autoStart: true, autoPull: true, timeoutMs: 120000 };
+    const baseUrl = `http://${ollama.host}:${ollama.port}`;
+    let ok = false;
+    let detail = '';
+    try {
+      const res = await fetch(`${baseUrl}/api/tags`, { signal: AbortSignal.timeout(2000) });
+      if (res.ok) {
+        const json = await res.json() as { models?: Array<{ name: string }> };
+        const models = (json.models ?? []).map((m) => m.name);
+        ok = models.includes(ollama.model);
+        detail = ok
+          ? `ollama ready, model ${ollama.model} (${models.length} models available)`
+          : `ollama reachable but model ${ollama.model} not pulled (run: ollama pull ${ollama.model})`;
+      } else {
+        detail = `ollama at ${baseUrl} returned ${res.status}`;
+      }
+    } catch {
+      detail = `ollama not reachable at ${baseUrl} (install from https://ollama.com, or set llm.provider)`;
+    }
+    results.push({ name: 'llm', ok, detail });
+  } else if (config.llm.provider === 'openai-compatible') {
     const hasKey = Boolean(config.llm.apiKey);
     results.push({
       name: 'llm',
@@ -88,7 +109,7 @@ export const doctorCommand: CommandHandler = async (ctx: CliContext): Promise<Co
       detail: hasKey ? 'apiKey set' : 'configured (no apiKey → falls back to noop)'
     });
   } else {
-    results.push({ name: 'llm', ok: true, detail: 'noop' });
+    results.push({ name: 'llm', ok: true, detail: 'noop (LLM-dependent features disabled)' });
   }
 
   // 6. Embedding
@@ -96,9 +117,9 @@ export const doctorCommand: CommandHandler = async (ctx: CliContext): Promise<Co
     const ok = Boolean(config.embedding.apiKey) && Boolean(config.embedding.baseUrl);
     results.push({ name: 'embedding', ok, detail: ok ? 'configured' : 'apiKey or baseUrl missing' });
   } else if (config.embedding.provider === 'local-xenova') {
-    results.push({ name: 'embedding', ok: true, detail: 'local-xenova (stub in v1)' });
+    results.push({ name: 'embedding', ok: true, detail: `local-xenova (model ${config.embedding.model}, ${config.embedding.dimensions}d)` });
   } else {
-    results.push({ name: 'embedding', ok: true, detail: 'noop' });
+    results.push({ name: 'embedding', ok: true, detail: 'noop (vector layer disabled)' });
   }
 
   // 7. PID file existence (informational)

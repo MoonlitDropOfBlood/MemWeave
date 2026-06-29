@@ -29,9 +29,12 @@ export function registerSettingsRoute(app: FastifyInstance, configPath?: string)
       llm: {
         ...config.llm,
         apiKey: maskIfString(config.llm.apiKey),
-        // `openai-compatible` without an apiKey is a noop. The provider
-        // layer still degrades gracefully, but the UI should flag it.
-        isConfigured: config.llm.provider === 'noop' || Boolean(config.llm.apiKey)
+        // `ollama` is local (no key); `openai-compatible` needs an apiKey;
+        // `noop` is always "configured" (just disabled). Without a key,
+        // openai-compatible degrades to noop — the UI should flag that.
+        isConfigured: config.llm.provider === 'ollama'
+          || config.llm.provider === 'noop'
+          || Boolean(config.llm.apiKey)
       },
       consolidation: config.consolidation,
       injection: config.injection,
