@@ -1,5 +1,6 @@
 import { openDatabase } from '../db/database.js';
 import { runConsolidation, type ConsolidationResult } from '../workers/consolidator.js';
+import { enrichMemories } from '../workers/enricher.js';
 import { ConsolidationRunRepo } from '../db/repositories/consolidation-run-repo.js';
 import type { LlmProvider } from '../providers/llm/index.js';
 import type { EmbeddingProvider } from '../providers/embedding/index.js';
@@ -77,6 +78,24 @@ export function startConsolidationScheduler(options: SchedulerOptions): Schedule
         timestamp: endedAt
       };
       options.onRun?.(payload);
+
+      // ── Async LLM enrichment (fire-and-forget) ──────────────────────────
+      // After the synchronous rule-based consolidation, run the LLM enrichment
+      // pass: generate real title/summary/concepts for memories that still have
+      // raw-conversation text or empty concepts. This is the fix for the
+      // "975/1015 memories have empty concepts" data-quality problem.
+      //
+      // Runs on its own DB connection (the main one closes in `finally` below)
+      // and is NOT awaited — we don't want a slow LLM to block the next
+      // scheduler interval. Failures are logged but never abort the run.
+      if (options.llmProvider && !(options.llmProvider instanceof Object && 'call' in options.llmProvider && options.llmProvider.constructor.name === 'NoopLlmProvider')) {
+        void enrichMemories(options.dbPath, tenantId, options.llmProvider, options.embeddingProvider)
+          .then((r) => {
+            if (r.enriched > 0) logger.info({ enriched: r.enriched, failed: r.failed }, 'enrichment pass complete');
+          })
+          .catch((err) => logger.warn({ err: (err as Error).message }, 'enrichment pass failed (non-fatal)'));
+      }
+
       return payload;
     } finally {
       db.close();

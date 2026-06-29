@@ -127,14 +127,41 @@ function runConsolidationInner(
 
     if (!options.dryRun && toPromote.length > 0) {
       transaction(db, () => {
-        const stmt = db.prepare('UPDATE memories SET tier = ? WHERE id = ?');
+        const stmt = db.prepare('UPDATE memories SET tier = ?, promoted_at = ? WHERE id = ?');
         for (const row of toPromote) {
-          stmt.run('medium', row.id);
+          stmt.run('medium', now, row.id);
         }
       });
     }
     result.tierPromoted = toPromote.length;
     result.tierPromotedIds = toPromote.map((r) => r.id);
+
+    // 2b. Promote medium→long: high importance AND frequently accessed OR
+    //     strongly reinforced. This was MISSING before — nothing ever reached
+    //     the long tier (the consolidator only created importance 6/8, and the
+    //     only `long` assignment was at create-time when importance >= 10,
+    //     which the consolidator never produced). The long tier drives the
+    //     injection stable pack and the Atlas dashboard's long-tier bar, so
+    //     leaving it permanently empty made the Web UI look barren.
+    const toPromoteLong = db.prepare(`
+      SELECT id FROM memories
+      WHERE tenant_id = ? AND tier = 'medium' AND deleted_at IS NULL
+        AND (
+          (importance >= 8 AND access_count >= 5)
+          OR (importance >= 7 AND reinforcement_score >= 0.5)
+        )
+    `).all(tenantId) as Array<{ id: string }>;
+
+    if (!options.dryRun && toPromoteLong.length > 0) {
+      transaction(db, () => {
+        const stmt = db.prepare('UPDATE memories SET tier = ?, promoted_at = ? WHERE id = ?');
+        for (const row of toPromoteLong) {
+          stmt.run('long', now, row.id);
+        }
+      });
+    }
+    result.tierPromoted += toPromoteLong.length;
+    result.tierPromotedIds.push(...toPromoteLong.map((r) => r.id));
 
     // 3. Merge near-duplicates. Reuses the Jaccard-on-concepts logic
     //    that `MemoryRepo.create` uses, but operating on existing rows.

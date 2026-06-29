@@ -33,4 +33,32 @@ describe('runConsolidation', () => {
     const result = runConsolidation(db, 'tenant_default', { dryRun: true });
     expect(result.evicted).toBeGreaterThanOrEqual(1);
   });
+
+  it('promotes medium → long when importance >= 8 AND access_count >= 5', () => {
+    const now = Date.now();
+    // A medium-tier memory with high importance and frequent access.
+    db.prepare(`
+      INSERT INTO memories (id, tenant_id, tier, type, title, content, summary, concepts_json, concepts_text, files_json, importance, confidence, strength, source, scope_level, tau, access_count, reinforcement_score, created_at, updated_at)
+      VALUES (?, 'tenant_default', 'medium', 'decision', 'Architectural decision', 'c', 's', '[]', '', '[]', 8, 0.9, 0.8, 'user_explicit', 'project', 30, 5, 0.6, ?, ?)
+    `).run('mem_long', now, now);
+
+    const result = runConsolidation(db, 'tenant_default');
+    expect(result.tierPromoted).toBeGreaterThanOrEqual(1);
+    expect(result.tierPromotedIds).toContain('mem_long');
+
+    const updated = db.prepare("SELECT tier FROM memories WHERE id = 'mem_long'").get() as { tier: string };
+    expect(updated.tier).toBe('long');
+  });
+
+  it('does NOT promote medium → long when importance is too low', () => {
+    const now = Date.now();
+    db.prepare(`
+      INSERT INTO memories (id, tenant_id, tier, type, title, content, summary, concepts_json, concepts_text, files_json, importance, confidence, strength, source, scope_level, tau, access_count, reinforcement_score, created_at, updated_at)
+      VALUES (?, 'tenant_default', 'medium', 'fact', 'Routine fact', 'c', 's', '[]', '', '[]', 5, 0.8, 0.6, 'system_inferred', 'project', 30, 2, 0.3, ?, ?)
+    `).run('mem_stay_medium', now, now);
+
+    runConsolidation(db, 'tenant_default');
+    const updated = db.prepare("SELECT tier FROM memories WHERE id = 'mem_stay_medium'").get() as { tier: string };
+    expect(updated.tier).toBe('medium');
+  });
 });
