@@ -1,11 +1,11 @@
 import { randomUUID } from 'node:crypto';
 import type { Db } from '../database.js';
-import type { SourceClient } from '../../core/types.js';
 
 export interface CreateDeviceInput {
   tenantId: string;
   name: string;
-  type: SourceClient | 'rest';
+  /** Client identifier (open-ended: 'opencode', 'zcode', 'rest', etc.). */
+  type: string;
   apiKeyHash: string;
 }
 

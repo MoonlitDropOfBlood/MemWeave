@@ -39,7 +39,14 @@ export type ScopeLevel = z.infer<typeof ScopeLevelSchema>;
 export const MemorySourceSchema = z.enum(['user_explicit', 'agent_capture', 'system_inferred']);
 export type MemorySource = z.infer<typeof MemorySourceSchema>;
 
-export const SourceClientSchema = z.enum(['opencode', 'cursor', 'claude_code', 'codex', 'mavis', 'rest_api']);
+/**
+ * Open-ended client identifier (NOT a fixed enum). Any plugin/client can write
+ * memories without the server needing to know about it in advance — new plugins
+ * (zcode, future agents, etc.) just pass their own identifier string. Common
+ * values: 'opencode', 'cursor', 'claude_code', 'codex', 'mavis', 'zcode',
+ * 'rest_api'. Stored verbatim in `memories.source_client`.
+ */
+export const SourceClientSchema = z.string().min(1).nullable().default(null);
 export type SourceClient = z.infer<typeof SourceClientSchema>;
 
 export const ScopeTagSchema = z.object({
@@ -75,7 +82,7 @@ export const CreateMemoryInputSchema = z.object({
   source: MemorySourceSchema,
   scopeLevel: ScopeLevelSchema,
   scopes: z.array(ScopeTagSchema).default([]),
-  sourceClient: SourceClientSchema.nullable().default(null),
+  sourceClient: SourceClientSchema,
   sourceDeviceId: z.string().nullable().default(null),
   sourceSessionId: z.string().nullable().default(null)
 });
