@@ -121,7 +121,7 @@ export function startEmbedderWorker(options: EmbedderOptions): EmbedderHandle {
   }
 
   if (options.runOnStart) {
-    void runOnce();
+    void runOnce().catch((err) => logger.error({ err }, 'embedder initial run failed'));
   }
   schedule();
 

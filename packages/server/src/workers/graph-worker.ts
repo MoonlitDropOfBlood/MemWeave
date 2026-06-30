@@ -92,7 +92,17 @@ export function startGraphWorker(options: GraphWorkerOptions): GraphWorkerHandle
         const targets = findCandidateTargets(db, tenantId, mem);
         for (const target of targets) {
           if (target.id === mem.id) continue;
-          const llmCandidates = await extractEdgesViaLlm(options.llm, mem, target);
+          // The LLM call is the failure-prone step (bad key, network, timeout,
+          // malformed output). Wrap it so ONE bad call skips this pair without
+          // crashing the worker (and the server, since runOnce runs in-process).
+          // The graph worker must be fail-silent, like the OpenCode plugin.
+          let llmCandidates: EdgeCandidate[] = [];
+          try {
+            llmCandidates = await extractEdgesViaLlm(options.llm, mem, target);
+          } catch (err) {
+            logger.warn({ err: (err as Error).message, memId: mem.id, targetId: target.id }, 'graph-worker: edge extraction failed, skipping pair');
+            continue;
+          }
           for (const cand of llmCandidates) {
             if (cand.confidence < 0.6) continue;
             try {
@@ -139,7 +149,7 @@ export function startGraphWorker(options: GraphWorkerOptions): GraphWorkerHandle
   }
 
   if (options.runOnStart) {
-    void runOnce();
+    void runOnce().catch((err) => logger.error({ err }, 'graph-worker initial run failed'));
   }
   schedule();
 
