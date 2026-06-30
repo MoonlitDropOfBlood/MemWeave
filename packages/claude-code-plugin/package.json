@@ -1,0 +1,14 @@
+{
+  "name": "@mem-weave/claude-code-plugin",
+  "version": "1.0.0",
+  "description": "Claude Code / zcode plugin for MemWeave. Uses the .claude-plugin format + Claude-Code-style hooks, so one package works on both platforms. Writes completed conversation turns back to the MemWeave server on Stop, so the consolidation worker can promote high-signal turns to long-term memories.",
+  "license": "MIT",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test:stop": "node hooks/stop.mjs < fixtures/stop.json"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

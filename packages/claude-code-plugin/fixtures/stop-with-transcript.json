@@ -2,6 +2,6 @@
   "session_id": "zcode_test_session_003",
   "hook_event_name": "Stop",
   "cwd": "D:/ai-projects/memory",
-  "transcript_path": "D:/ai-projects/memory/packages/zcode-plugin/fixtures/transcript.jsonl",
+  "transcript_path": "D:/ai-projects/memory/packages/claude-code-plugin/fixtures/transcript.jsonl",
   "stop_hook_active": false
 }

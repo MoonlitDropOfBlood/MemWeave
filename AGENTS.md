@@ -29,6 +29,14 @@ TypeScript monorepo with two published npm packages and a web app:
   Idempotent on `(sessionId, messageId)` where `messageId = sha256(sessionId
   + "turn-" + turnId + assistantContent)`. Requires `@mem-weave/server@0.5.3+`
   (the `SourceClient` enum gained `'codex'` in v0.5.3).
+- **`packages/claude-code-plugin/`** — Claude Code / zcode plugin (v1.0.0+).
+  Uses the `.claude-plugin` format + Claude-Code-style hooks (stdin JSON event
+  + command script + `${CLAUDE_PLUGIN_ROOT}`), so ONE package works on BOTH
+  platforms (zcode recognizes `.claude-plugin` natively). Writes the last
+  assistant message back to the server via a `Stop` hook (`hooks/stop.mjs`,
+  cross-platform Node) that reads the transcript JSONL to extract the message.
+  Idempotent on `(sessionId, messageId)`. `SourceClient` is now open-ended
+  (`z.string()`) so any plugin can write without a server code change.
 - **`web/`** — React 18 + Vite admin UI ("Calm Memory Atlas"). Browsing,
   searching, debugging, and operating the memory system.
 
@@ -75,6 +83,15 @@ memweave/
 │       │   ├── stop.sh               # Unix thin wrapper → stop.mjs
 │       │   └── stop.cmd              # Windows thin wrapper → stop.mjs
 │       ├── README.md                 # Install + usage
+│       └── package.json              # Metadata only (private, not published)
+│   └── claude-code-plugin/             # @mem-weave/claude-code-plugin (directory, NOT published)
+│       ├── .claude-plugin/
+│       │   └── plugin.json           # Claude Code / zcode manifest (both platforms)
+│       ├── hooks/
+│       │   ├── hooks.json            # Stop event binding
+│       │   ├── _lib.mjs              # Shared HTTP write library (fail-silent)
+│       │   └── stop.mjs              # Cross-platform Node: stdin → transcript → POST sessions + observations
+│       ├── README.md                 # Install + usage (dual-platform)
 │       └── package.json              # Metadata only (private, not published)
 ├── scripts/
 │   ├── publish.mjs                   # One-shot build + publish for the 2 npm packages

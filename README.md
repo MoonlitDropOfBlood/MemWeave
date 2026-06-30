@@ -406,6 +406,44 @@ enabled = true
 
 **Codex MCP transport 注意**：Codex 的 `.mcp.json` 用 `type: "http"`，**和 OpenCode 的 `type: "remote"` 不一样** —— 两个客户端的 schema 是**两套**词汇表，**不可互换**。详见 [docs/superpowers/specs/2026-06-16-codex-plugin-design.md](./docs/superpowers/specs/2026-06-16-codex-plugin-design.md) §1.1。
 
+## Claude Code / zcode 插件（Stop 钩子自动写回）
+
+`packages/claude-code-plugin/` 是给 [Claude Code](https://docs.anthropic.com/en/docs/claude-code) 和 [zcode](https://z.ai) 用的插件。两个客户端都用 `.claude-plugin` 格式 + Claude-Code 风格 hooks（stdin JSON 事件 + command 脚本），所以**一份插件两个平台都能装**。
+
+做一件事：监听 **Stop 事件**（对话回合结束），从 transcript 提取最后一条 assistant 消息，POST 到 MemWeave server 写成 observation。后台 consolidation 会把高价值对话晋升为长期记忆。
+
+**安装：**
+
+```bash
+# Claude Code
+claude plugin install /path/to/memweave/packages/claude-code-plugin
+
+# zcode：在插件市场添加本地插件，指向 packages/claude-code-plugin 目录
+```
+
+**写侧数据流：**
+
+```
+[Claude Code / zcode] turn 结束 → Stop 事件 (JSON on stdin)
+   ↓
+[Plugin] hooks/stop.mjs
+   ├─ 读 stdin JSON (session_id, cwd, transcript_path)
+   ├─ 从 transcript JSONL 提取最后一条 assistant 消息
+   ├─ POST /api/v1/sessions    → 幂等建 session (source: "claude_code" / "zcode")
+   └─ POST /api/v1/observations → 幂等写 assistant 消息 (hookType: "chat.assistant")
+   ↓
+[Server] consolidation worker → LLM 富化 → 晋升为长期记忆
+```
+
+| 环境变量 | 默认值 | 含义 |
+|---|---|---|
+| `MEMWEAVE_SERVER_URL` | `http://127.0.0.1:3131` | MemWeave server 地址 |
+| `MEMWEAVE_TENANT` | `tenant_default` | 租户 ID |
+
+> 钩子对所有网络错误**静默容错** —— server 不可用时 agent 正常完成 turn。写入幂等（基于 `(sessionId, messageId)` 哈希），Stop 重放不会产生重复记录。
+
+更多细节见 [`packages/claude-code-plugin/README.md`](./packages/claude-code-plugin/README.md)。
+
 ## 写侧去重（服务端自动，零 token 开销）
 
 读侧闭环了，写侧呢？**`memory_save` 不会和当前 context 产生重复内容** —— 因为去重在服务端自动完成，**LLM 零感知、零 token 开销**。
