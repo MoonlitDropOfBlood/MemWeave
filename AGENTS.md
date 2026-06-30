@@ -8,7 +8,7 @@ TypeScript monorepo with two published npm packages and a web app:
 
 - **`@mem-weave/server`** (bin: `memweave`) — Fastify + SQLite server + CLI. Exposes
   REST under `/api/v1/*` and an **embedded MCP server at `POST/GET/DELETE /mcp`**
-  (Streamable HTTP, MCP 2025-03-26 spec, 10 `memory_*` tools).
+  (Streamable HTTP, MCP 2025-03-26 spec, 13 `memory_*` tools).
 - **`@mem-weave/opencode-plugin`** — OpenCode plugin loaded into the OpenCode
   process. Auto-injects memory summaries into the system prompt and **writes**
   every completed chat message back to the server so the consolidation worker
@@ -21,7 +21,7 @@ TypeScript monorepo with two published npm packages and a web app:
   (the only type OpenCode's Effect schema accepts for remote MCP servers).
 - **`packages/codex-plugin/`** — OpenAI Codex plugin (v0.5.3+). Pure-config
   plugin (no SDK, no runtime code) shipped as a directory installable via
-  `codex plugin install`. Auto-exposes the 10 `memory_*` MCP tools through
+  `codex plugin install`. Auto-exposes the 13 `memory_*` MCP tools through
   Codex's MCP HTTP transport (`.mcp.json` uses `type: "http"` — Codex's
   schema, NOT OpenCode's `type: "remote"`), and writes the last assistant
   message back to the server via a `Stop` lifecycle hook
@@ -47,19 +47,19 @@ memweave/
 │   │       ├── cli.ts                # Argv parser → commands/
 │   │       ├── commands/             # 11 subcommands (start, stop, init, …)
 │   │       ├── core/                 # Zod enums + config loader + decay model
-│   │       ├── db/                   # SQLite schema + 9 repositories
+│   │       ├── db/                   # SQLite schema + driver-adapter (node:sqlite) + 10 repositories
 │   │       ├── retrieval/            # 4-layer search (BM25/vector/graph/causal) + RRF
-│   │       ├── injection/            # XML/text bundler for LLM prompt injection
+│   │       ├── injection/            # XML/text bundler for LLM prompt injection (+ <about-user>)
 │   │       ├── rest/routes/          # Fastify routes (8 files, /api/v1/*)
 │   │       ├── mcp/                  # **EMBEDDED MCP server** (Streamable HTTP, /mcp)
 │   │       │   ├── index.ts          # Fastify → fetch bridge; POST/GET/DELETE /mcp
 │   │       │   ├── service.ts        # In-process service (talks to repos/retrieval/workers)
-│   │       │   ├── registry.ts       # Registers the 10 memory_* tools on a McpServer
-│   │       │   └── tools/            # 10 tools (memory_save / memory_recall / …)
+│   │       │   ├── registry.ts       # Registers the 13 memory_* tools on a McpServer
+│   │       │   └── tools/            # 13 tools (save/recall/smart_search/expand/graph_query/file_history/sessions/patterns/consolidate/forget/create_edge/profile_get/profile_update)
 │   │       ├── prompts/              # Compression / edge-extract / value-gate templates
-│   │       ├── workers/              # Consolidation pipeline (6 files)
+│   │       ├── workers/              # Consolidation (consolidator) + enricher (LLM) + json-repair + embedder + graph-worker
 │   │       ├── server/               # HTTP bootstrap + scheduler + auth + rate-limiter + logger
-│   │       ├── providers/            # Embedding (openai/xenova/noop) + LLM (openai/noop)
+│   │       ├── providers/            # Embedding (openai/xenova/noop) + LLM (ollama/openai/noop) + ollama-manager
 │   │       └── types/                # Ambient .d.ts for optional deps (xenova)
 │   └── opencode-plugin/              # @mem-weave/opencode-plugin (npm)
 │       └── src/
@@ -115,8 +115,14 @@ memweave/
 | `fuseResults()` | `packages/server/src/retrieval/fusion.ts` | RRF (Reciprocal Rank Fusion) |
 | `createHttpServer()` | `packages/server/src/server/http.ts` | Fastify app factory; mounts `/mcp` |
 | `buildMcpHandler()` | `packages/server/src/mcp/index.ts` | Per-request MCP transport over Fastify |
-| `McpService` | `packages/server/src/mcp/service.ts` | In-process service for the 10 tools |
-| `startConsolidationScheduler()` | `packages/server/src/server/scheduler.ts` | 6h interval, runs on start |
+| `McpService` | `packages/server/src/mcp/service.ts` | In-process service for the 13 tools (+ createEdge, profile get/update) |
+| `DatabaseAdapter` | `packages/server/src/db/driver-adapter.ts` | node:sqlite → better-sqlite3 compatible surface (named params, transactions) |
+| `enrichMemories()` | `packages/server/src/workers/enricher.ts` | Async LLM enrichment: title/summary/concepts for raw memories |
+| `parseJsonLenient()` | `packages/server/src/workers/json-repair.ts` | Recovers malformed LLM JSON (fences, truncation, trailing commas) |
+| `ensureOllamaReady()` | `packages/server/src/providers/llm/ollama-manager.ts` | Auto-manages local Ollama (probe/start/pull model) |
+| `UserProfileRepo` | `packages/server/src/db/repositories/user-profile-repo.ts` | Per-tenant user profile (traits + summary) |
+| `startConsolidationScheduler()` | `packages/server/src/server/scheduler.ts` | 6h interval, runs on start, fires enrichment after |
+| `startEmbedderWorker()` / `startGraphWorker()` | `workers/embedder.ts` / `workers/graph-worker.ts` | Background vector backfill + edge discovery |
 | `MemweaveInjectPlugin` | `packages/opencode-plugin/src/index.ts` | 4-hook OpenCode plugin: config-injects `mcp.memweave` + auto-write closure |
 | `MemweaveInjectClient` | `packages/opencode-plugin/src/client.ts` | HTTP client (`/inject`, `/sessions`, `/observations`) |
 | `buildBundle()` | `packages/server/src/injection/bundler.ts` | Token-budgeted XML packager |
@@ -128,7 +134,7 @@ memweave/
 - **Zod-first types**: every enum (`MemoryType`, `MemoryTier`, `EdgeType`, `SourceClient`, etc.) lives in `packages/server/src/core/types.ts` as a Zod schema; types are inferred.
 - **One file per route/tool/command**: each REST route, MCP tool, and CLI subcommand is its own file. `index.ts` files re-export.
 - **Idempotent schema**: `SCHEMA_SQL` uses `IF NOT EXISTS`. To migrate, add a `migrations/` step (currently a `migrate` command runs the schema verbatim).
-- **No external LLM required**: `embedding.dimensions: 0` disables the vector layer; `providers/llm/noop.ts` makes consolidation a pure rule-based pass.
+- **No external LLM required**: `llm.provider: "ollama"` (default) auto-manages a local Ollama server; `embedding.provider: "local-xenova"` (default) runs ONNX locally. Both degrade gracefully to noop/rule-based when unavailable.
 - **Multi-tenant by default**: every repository method takes `tenantId`; `auth.ts` middleware validates API key against `tenants.api_key_hash`.
 - **Idempotent write endpoints**: the OpenCode plugin may retry (restarts, network blips). `POST /api/v1/sessions` is idempotent on `sessionId`; `POST /api/v1/observations` is idempotent on `(sessionId, messageId)` via the JSON envelope in `tool_input`.
 - **Two publishable packages**: `@mem-weave/server` and `@mem-weave/opencode-plugin`. The standalone `@mem-weave/mcp` is **retired** — do not recreate it. The Codex plugin (`packages/codex-plugin/`) is a **directory**, not an npm package — install via `codex plugin install <path>`.
@@ -197,7 +203,9 @@ Start-Process -WindowStyle Hidden memweave start
   installed location — NOT the source tree. If you skip the
   sync, browser refreshes will see the **old** bundle even after
   rebuilding. See commit `36c747c` for the bug history.
-- **Vector layer optional**: `embedding.dimensions: 0` skips sqlite-vec entirely; falls back to BM25 + graph + causal.
+- **Vector layer optional**: `embedding.provider: "noop"` skips the vector layer entirely; falls back to BM25 + graph + causal. Default is `local-xenova` (ONNX, prebuilt binaries).
+- **Local LLM fallback (Ollama)**: `llm.provider` defaults to `ollama` — auto-manages a local Ollama server (probe/start/pull qwen2.5:3b). Zero-config, 16GB RAM. Degrades to noop if Ollama unavailable.
+- **DB driver**: `node:sqlite` (Node built-in, C-backed, no compile) + pure-JS L2 vector search. No native compilation on install (better-sqlite3/sqlite-vec removed).
 - **MCP endpoint**: `POST/GET/DELETE http://127.0.0.1:3131/mcp` (Streamable HTTP). Any MCP client (OpenCode, Claude Desktop, custom) can connect.
 - **Git history**: this is a fresh checkout; commit/branch conventions not yet established.
 - **Docs**: design specs live in `docs/superpowers/specs/`. The README is the canonical feature overview; CHANGELOG.md tracks per-version deltas.
