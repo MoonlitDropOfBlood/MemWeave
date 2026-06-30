@@ -56,6 +56,16 @@ interface MemoryToEnrich {
  *   the vector layer reflects the enriched content.
  * - **Batched**: processes up to `batchSize` memories per run to bound latency.
  */
+/**
+ * Process-wide flag: once embedding fails (model download blocked, network
+ * down), disable it for ALL subsequent enrichMemories calls in this process.
+ * The backfill script calls enrichMemories in a loop — without this module-
+ * level flag, each round would re-attempt embedding and re-fail, stalling the
+ * run with per-call timeouts. LLM enrichment (title/summary/concepts) is
+ * unaffected; only the vector is skipped until the process restarts.
+ */
+let embeddingDisabledProcessWide = false;
+
 export async function enrichMemories(
   dbPath: string,
   tenantId: string,
@@ -109,7 +119,7 @@ async function enrichMemoriesInner(
   if (candidates.length === 0) return result;
 
   const dims = embedding?.dimensions ?? 768;
-  const vecRepo = embedding ? new VectorRepo(db, dims) : null;
+  const vecRepo = (embedding && !embeddingDisabledProcessWide) ? new VectorRepo(db, dims) : null;
 
   for (const mem of candidates) {
     try {
@@ -141,15 +151,22 @@ async function enrichMemoriesInner(
         mem.id, tenantId
       );
 
-      // (Re)generate the embedding from the enriched text.
-      if (vecRepo && embedding) {
+      // (Re)generate the embedding from the enriched text. Skipped entirely
+      // once embedding has failed in this process (network/model-download
+      // issues won't recover, and retrying stalls the backfill).
+      if (vecRepo && embedding && !embeddingDisabledProcessWide) {
         try {
           const text = [candidate.title, candidate.summary, candidate.content, conceptsText].filter(Boolean).join('\n');
-          const vec = await embedding.embed(text);
+          // Race against a 30s timeout so a hung fetch can't stall the run.
+          const vec = await Promise.race([
+            embedding.embed(text),
+            new Promise<never>((_, reject) =>
+              setTimeout(() => reject(new Error('embedding timeout (30s)')), 30_000))
+          ]);
           vecRepo.upsert(mem.id, tenantId, vec);
         } catch (err) {
-          // Embedding failure is non-fatal — the text enrichment still landed.
-          logger.warn({ err: (err as Error).message, memId: mem.id }, 'enrich: embedding failed');
+          embeddingDisabledProcessWide = true;
+          logger.warn({ err: (err as Error).message }, 'enrich: embedding disabled process-wide until restart (LLM enrichment continues)');
         }
       }
 
