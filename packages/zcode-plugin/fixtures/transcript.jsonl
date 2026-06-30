@@ -1,0 +1,2 @@
+{"type":"user","message":{"content":[{"type":"text","text":"怎么用 strict mode"}]}}
+{"type":"assistant","message":{"content":[{"type":"text","text":"在 tsconfig.json 里启用 strict: true,这会打开 noImplicitAny 和 strictNullChecks 等所有严格检查。"}]}}

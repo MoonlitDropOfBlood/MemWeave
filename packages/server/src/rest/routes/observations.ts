@@ -23,7 +23,8 @@ const ScopeTagInputSchema = z.object({
 const CreateObservationSchema = z.object({
   sessionId: z.string().min(1).max(200),
   messageId: z.string().min(1).max(200),
-  hookType: z.enum(['chat.user', 'chat.assistant', 'chat.tool']),
+  /** Hook type (open-ended: 'chat.user', 'chat.assistant', 'chat.tool', 'post_tool_use', etc.). */
+  hookType: z.string().min(1).max(100),
   text: z.string().min(1).max(200_000),
   toolName: z.string().min(1).max(200).optional(),
   toolInput: z.string().max(200_000).optional(),
