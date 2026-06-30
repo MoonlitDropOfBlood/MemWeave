@@ -43,7 +43,7 @@ describe('bm25Search', () => {
     for (let i = 0; i < 5; i++) {
       repo.create({
         tenantId: 'tenant_default', type: 'fact', title: `Test ${i}`,
-        content: 'shared keyword alpha', summary: 'Test.',
+        content: `shared keyword alpha entry ${i}`, summary: 'Test.',
         concepts: [], files: [], importance: 5, confidence: 0.5, source: 'system_inferred',
         scopeLevel: 'project', scopes: [], sourceClient: null, sourceDeviceId: null, sourceSessionId: null
       });

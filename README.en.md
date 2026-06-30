@@ -73,7 +73,7 @@ The plugin only injects summaries into the system prompt (step 1). The MCP tools
 ### Option A — global install (recommended; needed for OpenCode / IDE integration)
 
 ```bash
-npm install -g --allow-scripts=better-sqlite3,sharp,protobufjs @mem-weave/server
+npm install -g @mem-weave/server
 npm install -g @mem-weave/opencode-plugin
 memweave init     # generate memweave.config.jsonc + data dir
 memweave start    # background server (default since v0.5.7)
@@ -177,8 +177,8 @@ curl http://127.0.0.1:3131/api/v1/health
         └────────────────┬─────────────────────┘
                          ▼
               ┌─────────────────────┐
-              │  SQLite + sqlite-vec│
-              │   (local, embedded) │
+              │  SQLite (node:sqlite)│
+              │  + pure-JS vectors   │
               └─────────────────────┘
                          ▲
                          │
@@ -608,7 +608,8 @@ No open-source license declared yet. Contact the author before use.
 ## Acknowledgements
 
 - [Fastify](https://fastify.io/) — high-performance HTTP server
-- [better-sqlite3](https://github.com/WiseLibs/better-sqlite3) — synchronous SQLite client
-- [sqlite-vec](https://github.com/asg017/sqlite-vec) — embedded vector search
+- [node:sqlite](https://nodejs.org/api/sqlite.html) — Node built-in SQLite (C-backed, no compile)
+- [@xenova/transformers](https://github.com/xenova/transformers.js) — local ONNX embeddings (prebuilt binaries)
+- [Ollama](https://ollama.com/) — local LLM runtime
 - [Model Context Protocol](https://modelcontextprotocol.io/) — agent tool-calling standard
 - [Vite](https://vitejs.dev/) + [React](https://react.dev/) — frontend

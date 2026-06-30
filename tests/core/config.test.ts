@@ -22,9 +22,10 @@ describe('defaultConfig()', () => {
     expect(cfg.storage.path).toBe('~/.memweave/data/memweave.db');
     expect(cfg.auth.deviceApiKey).toBe('dev-local-key');
     expect(cfg.auth.requireAuth).toBe(false);
-    expect(cfg.embedding.provider).toBe('noop');
+    expect(cfg.embedding.provider).toBe('local-xenova');
     expect(cfg.embedding.dimensions).toBe(768);
-    expect(cfg.llm.provider).toBe('noop');
+    expect(cfg.llm.provider).toBe('ollama');
+    expect(cfg.llm.model).toBe('qwen2.5:3b');
     expect(cfg.consolidation.enabled).toBe(true);
     expect(cfg.consolidation.intervalHours).toBe(6);
     expect(cfg.injection.sessionStartBudget).toBe(1200);
@@ -37,7 +38,7 @@ describe('loadConfig()', () => {
   it('returns defaults when path is undefined', () => {
     const cfg = loadConfig();
     expect(cfg.server.port).toBe(3131);
-    expect(cfg.embedding.provider).toBe('noop');
+    expect(cfg.embedding.provider).toBe('local-xenova');
   });
 
   it('merges a partial config file with defaults', () => {
@@ -46,7 +47,7 @@ describe('loadConfig()', () => {
     const cfg = loadConfig(p);
     expect(cfg.server.port).toBe(4000);
     expect(cfg.server.host).toBe('127.0.0.1'); // default
-    expect(cfg.embedding.provider).toBe('noop'); // default
+    expect(cfg.embedding.provider).toBe('local-xenova'); // default
   });
 
   it('parses a full config file', () => {

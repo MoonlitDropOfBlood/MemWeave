@@ -61,7 +61,7 @@ const AccessLogsQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(200).default(50)
 });
 
-export function registerMemoriesRoute(app: FastifyInstance, dbPath: string): void {
+export function registerMemoriesRoute(app: FastifyInstance, dbPath: string, embeddingProvider?: import('../../providers/embedding/index.js').EmbeddingProvider): void {
   const memoryRepo = new MemoryRepo(openDatabase(dbPath));
   const edgeRepo = new EdgeRepo(openDatabase(dbPath));
   const accessLogRepo = new AccessLogRepo(openDatabase(dbPath));
@@ -153,8 +153,16 @@ export function registerMemoriesRoute(app: FastifyInstance, dbPath: string): voi
     const body = SearchBodySchema.parse(request.body);
     const db = openDatabase(dbPath);
     try {
+      // Generate the query embedding when a provider is wired (batch D).
+      // Without this the vector layer is always skipped (search-engine.ts:88
+      // guard) and retrieval degrades to BM25-only — the original recall bug.
+      let queryEmbedding: number[] | undefined;
+      if (embeddingProvider && body.query.trim().length > 0) {
+        try { queryEmbedding = await embeddingProvider.embed(body.query); } catch { /* non-fatal */ }
+      }
       const search = await searchMemories(db, TENANT_DEFAULT, {
         query: body.query,
+        queryEmbedding,
         limit: body.limit ?? 8,
         scope: body.scope as Partial<Record<ScopeKey, string>> | undefined,
         types: body.types as MemoryType[] | undefined

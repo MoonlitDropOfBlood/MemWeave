@@ -6,6 +6,8 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { openDatabase } from '../db/database.js';
 import { buildMcpHandler } from '../mcp/index.js';
+import type { LlmProvider } from '../providers/llm/index.js';
+import type { EmbeddingProvider } from '../providers/embedding/index.js';
 import { logger } from './logger.js';
 import { registerInjectionRoute } from '../rest/routes/injection.js';
 import { registerMemoriesRoute } from '../rest/routes/memories.js';
@@ -20,6 +22,10 @@ export interface CreateHttpServerOptions {
   dbPath: string;
   /** Path to config.jsonc (used by /api/v1/settings). */
   configPath?: string;
+  /** LLM provider (threaded to McpService for search-time query embedding). */
+  llmProvider?: LlmProvider;
+  /** Embedding provider (threaded to McpService for search-time query embedding). */
+  embeddingProvider?: EmbeddingProvider;
 }
 
 export async function createHttpServer(options: CreateHttpServerOptions) {
@@ -54,7 +60,7 @@ export async function createHttpServer(options: CreateHttpServerOptions) {
     });
   });
 
-  registerMemoriesRoute(app, options.dbPath);
+  registerMemoriesRoute(app, options.dbPath, options.embeddingProvider);
   registerInjectionRoute(app, options.dbPath);
   registerStatsRoute(app, options.dbPath);
   registerSessionsRoute(app, options.dbPath);
@@ -74,7 +80,7 @@ export async function createHttpServer(options: CreateHttpServerOptions) {
   // the first form; the NDJSON form would error out. The MCP handler
   // reads the raw body itself (we still keep Fastify's default JSON
   // parser active for the REST routes — they're strict JSON).
-  const handleMcp = buildMcpHandler({ db });
+  const handleMcp = buildMcpHandler({ db, llmProvider: options.llmProvider, embeddingProvider: options.embeddingProvider });
   app.post('/mcp', async (req, reply) => {
     await handleMcp(req, reply);
   });

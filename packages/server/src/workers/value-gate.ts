@@ -15,13 +15,34 @@ export interface ValueGateResult {
 }
 
 const REMEMBER_PATTERNS = [
+  // Chinese explicit-remember cues.
   /记住/i, /记住这个/i, /以后遇到/i, /记住.*偏好/i,
-  /这个是我的偏好/i, /这个方案确定了/i, /以后记住/i
+  /这个是我的偏好/i, /这个方案确定了/i, /以后记住/i,
+  // English explicit-remember cues.
+  /\bremember\b/i, /\bremember that\b/i, /\bfrom now on\b/i, /\bmake sure to\b/i,
+  /\bnote that\b/i, /\bdon'?t forget\b/i, /\bkeep in mind\b/i, /\bfor future/i
 ];
 
 const DECISION_PATTERNS = [
+  // Chinese architectural-decision cues.
   /我们就用/i, /决定.*用/i, /选择.*而不是/i, /不用.*了/i,
-  /采用/i, /使用.*方案/i, /确定.*架构/i
+  /采用/i, /使用.*方案/i, /确定.*架构/i,
+  // English decision cues.
+  /\blet'?s go with\b/i, /\bdecided to\b/i, /\bwe (?:will|should) use\b/i,
+  /\bgoing with\b/i, /\binstead of\b/i, /\bthe approach is\b/i
+];
+
+/**
+ * Signals that an assistant message contains a reusable conclusion (not just
+ * process narration). Used to promote chat.assistant observations that carry
+ * actual knowledge — code patterns, bug fixes, architectural conclusions.
+ */
+const ASSISTANT_KNOWLEDGE_PATTERNS = [
+  /```[\s\S]/,          // a code block
+  /\bTODO\b/i, /\bFIXME\b/i, /\bHACK\b/i,
+  /\bthe (?:root cause|fix|solution) is\b/i,
+  /\bwe need to\b/i, /\byou must\b/i, /\balways use\b/i, /\bnever use\b/i,
+  /\barchitecture\b/i, /\bpattern\b/i
 ];
 
 const FAILURE_KEYWORDS = ['error', 'fail', 'crash', 'exception', 'build failed', 'test failed'];
@@ -68,6 +89,18 @@ export function evaluateObservation(input: ValueGateInput): ValueGateResult {
   //    for. Promote as `bug` so the agent can search failures.
   if (input.hookType === 'post_tool_use' && input.toolName === 'Bash' && FAILURE_KEYWORDS.some(k => combined.includes(k))) {
     return { shouldCreateMemory: true, reason: 'Tool failure detected', suggestedTypes: ['bug'], priority: 'high' };
+  }
+
+  // 3b. Assistant messages carrying reusable knowledge. chat.assistant
+  //     observations are usually process narration ("Let me check..."), but
+  //     some contain actual conclusions — code blocks, bug fixes, architectural
+  //     statements. Promote those so they survive as memories (the enricher
+  //     will then compress them into a clean title/summary/concepts).
+  if (input.hookType === 'chat.assistant') {
+    const assistantText = input.toolOutput || '';
+    if (ASSISTANT_KNOWLEDGE_PATTERNS.some(p => p.test(assistantText)) && assistantText.length > 40) {
+      return { shouldCreateMemory: true, reason: 'Assistant message contains reusable knowledge', suggestedTypes: ['lesson', 'code_pattern', 'fact'], priority: 'medium' };
+    }
   }
 
   // Default: reject routine operations. Observations that did not

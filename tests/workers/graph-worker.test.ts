@@ -7,6 +7,7 @@ import { MemoryRepo } from '../../packages/server/src/db/repositories/memory-rep
 import { EdgeRepo } from '../../packages/server/src/db/repositories/edge-repo.js';
 import { startGraphWorker } from '../../packages/server/src/workers/graph-worker.js';
 import { NoopLlmProvider } from '../../packages/server/src/providers/llm/noop.js';
+import type { LlmProvider } from '../../packages/server/src/providers/llm/index.js';
 
 let dbPath: string;
 
@@ -78,5 +79,38 @@ describe('startGraphWorker', () => {
     await new Promise((r) => setTimeout(r, 100));
     const after = events.length;
     expect(after).toBe(before);
+  });
+
+  it('is fail-silent when the LLM throws (does not crash runOnce)', async () => {
+    // Regression: a 401 / network error from the LLM used to crash the worker
+    // (and the server, since runOnce runs in-process). The LLM call must be
+    // wrapped so a bad pair is skipped and runOnce resolves normally.
+    const db = openDatabase(dbPath);
+    const memRepo = new MemoryRepo(db);
+    // Two memories whose titles overlap → findCandidateTargets returns a pair,
+    // so extractEdgesViaLlm actually gets called.
+    memRepo.create({
+      tenantId: 'tenant_default', type: 'fact', title: 'SQLite FTS5 ranking', content: 'c1',
+      summary: 's1', concepts: ['sqlite'], files: [], importance: 5, confidence: 0.8,
+      source: 'system_inferred', scopeLevel: 'project', scopes: [],
+      sourceClient: null, sourceDeviceId: null, sourceSessionId: null
+    });
+    memRepo.create({
+      tenantId: 'tenant_default', type: 'fact', title: 'SQLite vector search', content: 'c2',
+      summary: 's2', concepts: ['sqlite'], files: [], importance: 5, confidence: 0.8,
+      source: 'system_inferred', scopeLevel: 'project', scopes: [],
+      sourceClient: null, sourceDeviceId: null, sourceSessionId: null
+    });
+    db.close();
+
+    const throwingLlm: LlmProvider = {
+      async call() { throw new Error('LLM API error 401: Unauthorized'); }
+    };
+    const handle = startGraphWorker({ dbPath, llm: throwingLlm, intervalMs: 60_000 });
+    // runOnce must resolve (not reject) despite the LLM throwing.
+    const result = await handle.runNow();
+    expect(result.scanned).toBeGreaterThan(0);
+    expect(result.edgesCreated).toBe(0); // no edges created because the LLM failed
+    handle.stop();
   });
 });

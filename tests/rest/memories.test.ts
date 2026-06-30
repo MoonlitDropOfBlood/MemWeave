@@ -30,11 +30,11 @@ describe('GET /api/v1/memories (list)', () => {
 
   it('returns memories ordered by createdAt DESC', async () => {
     await createMemory({
-      type: 'fact', title: 'First', content: 'c', summary: 's', concepts: [], files: [],
+      type: 'fact', title: 'First', content: 'first content', summary: 's', concepts: [], files: [],
       importance: 5, confidence: 0.5, source: 'system_inferred', scopeLevel: 'project', scopes: []
     });
     await createMemory({
-      type: 'fact', title: 'Second', content: 'c', summary: 's', concepts: [], files: [],
+      type: 'fact', title: 'Second', content: 'second content', summary: 's', concepts: [], files: [],
       importance: 5, confidence: 0.5, source: 'system_inferred', scopeLevel: 'project', scopes: []
     });
     const res = await app.inject({ method: 'GET', url: '/api/v1/memories' });
@@ -47,7 +47,7 @@ describe('GET /api/v1/memories (list)', () => {
   it('respects limit and offset', async () => {
     for (let i = 0; i < 5; i++) {
       await createMemory({
-        type: 'fact', title: `m${i}`, content: 'c', summary: 's', concepts: [], files: [],
+        type: 'fact', title: `m${i}`, content: `content ${i}`, summary: 's', concepts: [], files: [],
         importance: 5, confidence: 0.5, source: 'system_inferred', scopeLevel: 'project', scopes: []
       });
     }

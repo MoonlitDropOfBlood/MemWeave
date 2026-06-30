@@ -44,7 +44,7 @@ export interface SearchResponse {
  * Multi-layer search (design spec §4.13):
  *
  *   1. BM25 keyword recall (FTS5)
- *   2. Vector recall (sqlite-vec; skipped when `queryEmbedding` is not provided)
+ *   2. Vector recall (pure-JS L2 over memory_vectors; skipped when `queryEmbedding` is not provided)
  *   3. Graph expansion (BFS from BM25/vector seeds, depth 1)
  *   4. Causal chain detection (from BM25/vector seeds, length ≤ 3)
  *   5. RRF fusion of all 4 streams

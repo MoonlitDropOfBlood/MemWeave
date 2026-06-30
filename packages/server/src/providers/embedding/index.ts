@@ -4,8 +4,9 @@
  * Implementations:
  * - `NoopEmbeddingProvider`: returns a deterministic dummy vector (zeros or hash-derived)
  * - `OpenaiCompatibleEmbeddingProvider`: POSTs to /v1/embeddings
- * - `LocalXenovaEmbeddingProvider`: uses @xenova/transformers (not bundled in v1;
- *   this is a stub that explains the install path)
+ * - `LocalXenovaEmbeddingProvider`: uses @xenova/transformers (ONNX runtime, CPU).
+ *   The default provider — ships prebuilt onnxruntime-node binaries (no compile)
+ *   and downloads the model (~137M params, ~545MB) on first use.
  */
 import { NoopEmbeddingProvider } from './noop.js';
 import { OpenaiCompatibleEmbeddingProvider } from './openai-compatible.js';
