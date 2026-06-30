@@ -1,0 +1,20 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "memweave",
+  "description": "MemWeave — 本地优先、可记忆、可推理的 AI agent 记忆基础设施。插件提供完整闭环:SessionStart 自动注入记忆摘要+用户画像,Stop 自动写入对话,暴露 13 个 memory_* MCP 工具。",
+  "owner": {
+    "name": "MemWeave"
+  },
+  "plugins": [
+    {
+      "name": "memweave",
+      "description": "MemWeave 记忆系统接入(完整闭环):SessionStart 自动注入相关记忆+用户画像;Stop 自动写入对话;暴露 13 个 memory_* MCP 工具(recall/save/create_edge/profile 等)。兼容 zcode 和 Claude Code。需先运行 memweave start。",
+      "author": {
+        "name": "MemWeave"
+      },
+      "category": "memory",
+      "source": "./packages/claude-code-plugin",
+      "homepage": "https://github.com/MoonlitDropOfBlood/MemWeave"
+    }
+  ]
+}
