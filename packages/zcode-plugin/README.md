@@ -1,10 +1,12 @@
 # @mem-weave/zcode-plugin
 
-zcode 插件,把 zcode 对话自动写入 [MemWeave](https://github.com/Duke_Bit/mem-weave) 记忆系统。
+zcode / Claude Code 插件,把对话自动写入 [MemWeave](https://github.com/Duke_Bit/mem-weave) 记忆系统。
+
+**兼容两个平台**:zcode 和 Claude Code 都用 `.claude-plugin` 格式 + Claude-Code 风格 hooks(stdin JSON 事件 + command 脚本),所以这一份插件两个平台都能装。
 
 ## 它做什么
 
-监听 zcode 的 **Stop 事件**(对话回合结束),把会话 + 最后一条 assistant 消息 POST 到本地 MemWeave server。后台 consolidation worker 会判断哪些对话有记忆价值,晋升为长期记忆(LLM 富化生成 title/summary/concepts)。
+监听 **Stop 事件**(对话回合结束),把会话 + 最后一条 assistant 消息 POST 到本地 MemWeave server。后台 consolidation worker 会判断哪些对话有记忆价值,晋升为长期记忆(LLM 富化生成 title/summary/concepts)。
 
 **写入是幂等的**:同一会话同一消息重复触发 Stop 不会产生重复记录(基于 `(sessionId, messageId)` 哈希)。
 
@@ -23,12 +25,20 @@ zcode 插件,把 zcode 对话自动写入 [MemWeave](https://github.com/Duke_Bit
 
 ## 安装
 
-zcode 插件是**目录型插件**(不是 npm 包),从本地路径安装:
+插件是**目录型插件**(不是 npm 包),用 `.claude-plugin` 格式。zcode 和 Claude Code 都支持从本地路径安装。
+
+### zcode
+
+zcode 内置了 Claude Code 插件兼容(认 `.claude-plugin` 目录)。在 zcode 的插件市场/设置里添加本地插件,指向 `packages/zcode-plugin` 目录,然后启用 `memweave` 插件。
+
+### Claude Code
 
 ```bash
-# 把 zcode-plugin 目录拷到你想放的位置,然后在 zcode 里启用
-# (具体启用方式见 zcode 的插件管理文档)
+# Claude Code 的插件安装(从本地路径)
+claude plugin install /path/to/memweave/packages/zcode-plugin
 ```
+
+或手动放到 `~/.claude/plugins/` 并在 `installed_plugins.json` 注册。
 
 ## 工作机制
 
