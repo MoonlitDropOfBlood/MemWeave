@@ -45,19 +45,31 @@ if (transcriptPath) {
   try {
     const content = readFileSync(transcriptPath, 'utf8');
     const lines = content.split('\n').filter((l) => l.trim().length > 0);
-    // Walk backwards to find the last assistant message.
+    // Walk backwards to find the last assistant message. Handle both formats:
+    // - zcode: { type: "model_complete", payload: { content: "text...", ... } }
+    // - Claude Code: { type: "assistant", message: { content: [...] } }
     for (let i = lines.length - 1; i >= 0; i--) {
       try {
         const msg = JSON.parse(lines[i]);
-        // zcode/Claude-Code transcript entries: { type: "assistant", message: { content: [...] } }
-        // or flatter { role: "assistant", content: "..." }. Handle both.
+
+        // zcode format: model_complete event with payload.content string
+        if (msg.type === 'model_complete' && msg.payload?.content) {
+          const text = msg.payload.content;
+          if (typeof text === 'string' && text.trim().length > 0) {
+            lastAssistant = text;
+            break;
+          }
+          continue;
+        }
+
+        // Claude Code format: { type: "assistant", message: { content: ... } }
         if (msg.type === 'assistant' || msg.role === 'assistant') {
-          const content = msg.message?.content ?? msg.content;
-          if (typeof content === 'string') {
-            lastAssistant = content;
-          } else if (Array.isArray(content)) {
+          const msgContent = msg.message?.content ?? msg.content;
+          if (typeof msgContent === 'string') {
+            lastAssistant = msgContent;
+          } else if (Array.isArray(msgContent)) {
             // content is an array of blocks; concatenate text blocks.
-            lastAssistant = content
+            lastAssistant = msgContent
               .filter((b) => typeof b === 'object' && b.type === 'text')
               .map((b) => b.text ?? '')
               .join('\n');
